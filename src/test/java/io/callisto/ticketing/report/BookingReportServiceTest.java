@@ -1,8 +1,9 @@
 package io.callisto.ticketing.report;
 
+import io.callisto.ticketing.domain.BookingStatus;
 import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
+import java.math.BigDecimal;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -13,56 +14,41 @@ class BookingReportServiceTest {
 
 	@Test
 	void countsOnlyConfirmedBookingsTowardsRevenue() {
-		LegacyBooking confirmed = booking("evt-1", "CONFIRMED", List.of("A1", "A2"), 25.0);
-		LegacyBooking pending = booking("evt-1", "PENDING", List.of("B1"), 25.0);
-		LegacyBooking cancelled = booking("evt-1", "CANCELLED", List.of("C1"), 25.0);
+		BookingLine confirmed = line("evt-1", new BookingStatus.Confirmed(), List.of("A1", "A2"), "25.00");
+		BookingLine pending = line("evt-1", new BookingStatus.Pending(), List.of("B1"), "25.00");
+		BookingLine cancelled = line("evt-1", new BookingStatus.Cancelled(), List.of("C1"), "25.00");
 
-		BookingReportResult result = service.generateReport(List.of(confirmed, pending, cancelled));
+		BookingReport report = service.generateReport(List.of(confirmed, pending, cancelled));
 
-		assertThat(result.getTotalBookings()).isEqualTo(3);
-		assertThat(result.getTotalSeatsSold()).isEqualTo(2);
-		assertThat(result.getTotalRevenue()).isEqualTo(50.0);
-		assertThat(result.getCancelledCount()).isEqualTo(1);
+		assertThat(report.totalBookings()).isEqualTo(3);
+		assertThat(report.totalSeatsSold()).isEqualTo(2);
+		assertThat(report.totalRevenue()).isEqualByComparingTo("50.00");
+		assertThat(report.cancelledCount()).isEqualTo(1);
 	}
 
 	@Test
 	void aggregatesRevenuePerEvent() {
-		LegacyBooking eventOne = booking("evt-1", "CONFIRMED", List.of("A1"), 40.0);
-		LegacyBooking eventTwo = booking("evt-2", "CONFIRMED", List.of("A1", "A2"), 10.0);
+		BookingLine eventOne = line("evt-1", new BookingStatus.Confirmed(), List.of("A1"), "40.00");
+		BookingLine eventTwo = line("evt-2", new BookingStatus.Confirmed(), List.of("A1", "A2"), "10.00");
 
-		BookingReportResult result = service.generateReport(List.of(eventOne, eventTwo));
+		BookingReport report = service.generateReport(List.of(eventOne, eventTwo));
 
-		assertThat(result.getRevenueByEvent())
-				.containsEntry("evt-1", 40.0)
-				.containsEntry("evt-2", 20.0);
+		assertThat(report.revenueByEvent())
+				.containsEntry("evt-1", new BigDecimal("40.00"))
+				.containsEntry("evt-2", new BigDecimal("20.00"));
 	}
 
 	@Test
 	void returnsEmptyReportForNoBookings() {
-		BookingReportResult result = service.generateReport(List.of());
+		BookingReport report = service.generateReport(List.of());
 
-		assertThat(result.getTotalBookings()).isZero();
-		assertThat(result.getTotalRevenue()).isZero();
-		assertThat(result.getRevenueByEvent()).isEmpty();
+		assertThat(report.totalBookings()).isZero();
+		assertThat(report.totalRevenue()).isEqualByComparingTo(BigDecimal.ZERO);
+		assertThat(report.revenueByEvent()).isEmpty();
 	}
 
-	@Test
-	void toleratesNullEntriesAndMissingStatus() {
-		LegacyBooking missingStatus = new LegacyBooking();
-		missingStatus.setEventId("evt-1");
-
-		BookingReportResult result = service.generateReport(Arrays.asList(missingStatus, null));
-
-		assertThat(result.getTotalBookings()).isZero();
-	}
-
-	private static LegacyBooking booking(String eventId, String status, List<String> seatLabels, double pricePerSeat) {
-		LegacyBooking booking = new LegacyBooking();
-		booking.setEventId(eventId);
-		booking.setStatus(status);
-		booking.setSeatLabels(seatLabels);
-		booking.setPricePerSeat(pricePerSeat);
-		return booking;
+	private static BookingLine line(String eventId, BookingStatus status, List<String> seatLabels, String pricePerSeat) {
+		return new BookingLine(eventId, status, seatLabels, new BigDecimal(pricePerSeat));
 	}
 
 }

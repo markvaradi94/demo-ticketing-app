@@ -1,70 +1,41 @@
 package io.callisto.ticketing.report;
 
-import java.util.HashMap;
+import io.callisto.ticketing.domain.BookingStatus;
+
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 public class BookingReportService {
 
-	public BookingReportResult generateReport(List<LegacyBooking> bookings) {
-		BookingReportResult result = new BookingReportResult();
-		if (bookings == null) {
-			return result;
-		}
+	public BookingReport generateReport(List<BookingLine> bookings) {
+		int totalBookings = bookings.size();
 
-		int total = 0;
-		int seatsSold = 0;
-		double revenue = 0.0;
-		int cancelled = 0;
-		Map<String, Double> revenueByEvent = new HashMap<>();
+		int cancelledCount = (int) bookings.stream()
+				.filter(line -> line.status() instanceof BookingStatus.Cancelled)
+				.count();
 
-		for (int i = 0; i < bookings.size(); i++) {
-			LegacyBooking booking = bookings.get(i);
-			if (booking == null || booking.getStatus() == null) {
-				continue;
-			}
+		List<BookingLine> confirmed = bookings.stream()
+				.filter(line -> line.status() instanceof BookingStatus.Confirmed)
+				.toList();
 
-			total++;
+		int totalSeatsSold = confirmed.stream()
+				.mapToInt(line -> line.seatLabels().size())
+				.sum();
 
-			if (booking.getStatus().equals("CANCELLED")) {
-				cancelled++;
-				continue;
-			}
+		BigDecimal totalRevenue = confirmed.stream()
+				.map(BookingLine::lineTotal)
+				.reduce(BigDecimal.ZERO, BigDecimal::add);
 
-			if (!booking.getStatus().equals("CONFIRMED")) {
-				continue;
-			}
+		Map<String, BigDecimal> revenueByEvent = confirmed.stream()
+				.collect(Collectors.groupingBy(
+						BookingLine::eventId,
+						TreeMap::new,
+						Collectors.reducing(BigDecimal.ZERO, BookingLine::lineTotal, BigDecimal::add)));
 
-			int seatsInBooking = 0;
-			if (booking.getSeatLabels() != null) {
-				for (int j = 0; j < booking.getSeatLabels().size(); j++) {
-					if (booking.getSeatLabels().get(j) != null) {
-						seatsInBooking++;
-					}
-				}
-			}
-
-			double lineTotal = seatsInBooking * booking.getPricePerSeat();
-			seatsSold = seatsSold + seatsInBooking;
-			revenue = revenue + lineTotal;
-
-			String eventId = booking.getEventId();
-			if (eventId != null) {
-				Double existing = revenueByEvent.get(eventId);
-				if (existing == null) {
-					revenueByEvent.put(eventId, lineTotal);
-				} else {
-					revenueByEvent.put(eventId, existing + lineTotal);
-				}
-			}
-		}
-
-		result.setTotalBookings(total);
-		result.setTotalSeatsSold(seatsSold);
-		result.setTotalRevenue(revenue);
-		result.setCancelledCount(cancelled);
-		result.setRevenueByEvent(revenueByEvent);
-		return result;
+		return new BookingReport(totalBookings, totalSeatsSold, totalRevenue, cancelledCount, revenueByEvent);
 	}
 
 }
