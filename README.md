@@ -8,7 +8,7 @@ history is the course.
 
 Two branches per session: `session-NN-start` is what you check out before the
 session begins, `session-NN-end` is the finished state after that session's live
-coding and lab. You are currently on **`session-01-end`**.
+coding and lab. You are currently on **`session-02-start`**.
 
 ## Prerequisites
 
@@ -21,20 +21,28 @@ coding and lab. You are currently on **`session-01-end`**.
 ./gradlew build
 ```
 
-## Where things stand — Session 1: Java 8 → 25
+## Where things stand — Session 2: Spring Boot core and REST
 
-This is the finished state of Session 1.
+Carried over from Session 1: `io.callisto.ticketing.domain` (`Event`, `Venue`, `Seat`,
+`BookingStatus`, `RefundPolicy`) and the refactored `BookingReportService`.
 
-- `io.callisto.ticketing.domain` — `Event`, `Venue`, `Seat` as records, and
-  `BookingStatus` as a sealed interface (`Pending` / `Confirmed` / `Cancelled`),
-  introduced during the session's live coding. `RefundPolicy` shows it put to use in
-  an exhaustive pattern-matching `switch`.
-- `io.callisto.ticketing.report` — `BookingReportService`, the lab's outcome:
-  refactored from the mutable-bean, nested-loop version on `session-01-start` into a
-  stream pipeline over the records `BookingLine` and `BookingReport`. Its tests
-  (`BookingReportServiceTest`) cover the same scenarios as the start branch's — one
-  test (null/missing-status tolerance) drops away, because a record can't be built
-  from a null required field the way the old mutable bean could.
+New on this branch — the "provided" baseline for Session 2, built and tested, not a
+lab task:
 
-Next up, Session 2: Spring Boot's startup internals, real REST endpoints for
-bookings, and the first GitHub Actions workflow.
+- `io.callisto.ticketing.catalog` — full Event CRUD, in-memory (`EventRepository`,
+  `EventController`), with request/response DTOs and Bean Validation
+  (`EventRequest`/`EventResponse`). `EventNotFoundException` is `@ResponseStatus`-based
+  for now — deliberately, so the session's live coding has an ugly default error body
+  to replace with `ProblemDetail`.
+- `EventControllerTest` — integration tests over real HTTP (`TestRestTemplate`),
+  covering create/fetch/validate/delete.
+
+**Session 2's lab:** booking endpoints (create, get, cancel), validated and correctly
+status-coded, plus a global `ProblemDetail` error handler and a `booking` rules
+`@ConfigurationProperties` that differs by profile (`local`/`cloud`) — see
+`session-02-end` for the finished shape.
+
+**Boot 4 note:** if you're writing HTTP integration tests, `TestRestTemplate` moved to
+`org.springframework.boot.resttestclient`, needs `@AutoConfigureTestRestTemplate`
+explicitly, and needs `spring-boot-restclient` on the test classpath — none of that is
+pulled in automatically by `spring-boot-starter-webmvc-test` alone.
