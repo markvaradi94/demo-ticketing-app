@@ -61,9 +61,7 @@ New on this branch:
   overridden per profile: `application-local.properties` (10),
   `application-cloud.properties` (6). Run with `--spring.profiles.active=local` or
   `=cloud` to see it change. `BookingPropertiesProfileTest` covers all three tiers
-  automatically — base, `local`, and `cloud` each get their own `@SpringBootTest`
-  context asserting the exact expected value, so this isn't just a manually-verified
-  curl demo.
+  automatically.
 - **`io.callisto.ticketing.booking`** — the lab's outcome. `BookingController`:
   `POST /events/{eventId}/bookings` (create, 201 + `Location`, starts `Confirmed`),
   `GET /events/{eventId}/bookings/{bookingId}` (get), `POST
@@ -74,10 +72,47 @@ New on this branch:
   parent-child relationship, so it has to be enforced, not just shaped that way. A
   mismatch returns the same 404 as an unknown booking, deliberately, rather than
   revealing that the ID exists under a different event.
-- **`BookingControllerTest`** — integration tests over real HTTP, covering the full
-  create/fetch/cancel flow plus every error path above.
 - **First CI workflow** — `.github/workflows/build.yml` runs `./gradlew build` on
   every push and pull request.
+
+## Testing strategy — three layers, on purpose
+
+- `EventControllerTest`/`BookingControllerTest` — controller/HTTP-contract layer:
+  `@WebMvcTest`, every repository/service dependency mocked (`@MockitoBean`). No
+  database, fast. Verifies status codes, JSON shape, Bean Validation, routing.
+- `BookingJourneyIntegrationTest` — full-stack integration layer: real HTTP
+  (`TestRestTemplate`) through the whole app — create an event, book it, fetch it,
+  cancel it — backed by the real (in-memory, for now) repositories. One broad
+  happy-path journey, not edge cases — those are the controller tests' job.
+- `BookingPropertiesProfileTest` — a narrower shape: this is testing
+  `SpringApplication`'s own profile-file-loading behavior, so it needs real bootstrap
+  machinery (`@SpringBootTest(classes = MinimalConfig.class)`), just scoped down to
+  skip JPA/web/Mongo it doesn't need.
+
+Why the controller and integration tests both exist: they test different things. The
+controller test proves the HTTP contract is right even if the repository were swapped
+out entirely; the integration test proves the pieces actually wire together. Neither
+substitutes for the other. Nothing about the integration test's *shape* will change
+when session 3 swaps in a real Postgres-backed repository — that's the point of
+testing through the repository's public contract rather than its implementation.
+
+**Boot 4 API locations, if you're writing more of these:** `TestRestTemplate` is in
+`org.springframework.boot.resttestclient` (needs `@AutoConfigureTestRestTemplate` and
+`spring-boot-restclient` on the test classpath). `WebMvcTest` is in
+`org.springframework.boot.webmvc.test.autoconfigure`. Mocking a bean is
+`@MockitoBean` (`org.springframework.test.context.bean.override.mockito`), not the
+deprecated `@MockBean`. None of this is pulled in automatically by
+`spring-boot-starter-webmvc-test` alone.
+
+## Homework
+
+Session 2's stretch goal — `@WebMvcTest` tests and pagination on the events list —
+becomes concrete now that `EventControllerTest`/`BookingControllerTest` are worked
+examples: **write a `@WebMvcTest` for a paginated `GET /events` endpoint you add
+yourself**, following the pattern already in `EventControllerTest` (mock the
+repository, assert on the HTTP response). This reinforces this session's testing
+approach rather than introducing anything new, and needs nothing from session 3 to
+attempt.
 
 Next up, Session 3: Postgres/JPA and MongoDB persistence, and the N+1 /
 missing-`@Version` bugs planted for that lab.
