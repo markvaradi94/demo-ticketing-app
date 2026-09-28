@@ -1,115 +1,124 @@
 package io.callisto.ticketing.booking;
 
 import io.callisto.ticketing.booking.dto.BookingRequest;
-import io.callisto.ticketing.booking.dto.BookingResponse;
-import io.callisto.ticketing.catalog.dto.EventRequest;
-import io.callisto.ticketing.catalog.dto.EventResponse;
+import io.callisto.ticketing.catalog.EventRepository;
+import io.callisto.ticketing.domain.BookingStatus;
+import io.callisto.ticketing.domain.Event;
+import io.callisto.ticketing.domain.Venue;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.resttestclient.TestRestTemplate;
-import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ProblemDetail;
-import org.springframework.http.ResponseEntity;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
+import java.util.Optional;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@AutoConfigureTestRestTemplate
+/**
+ * Controller-layer test: HTTP contract only — status codes, JSON shape, validation,
+ * routing. {@link BookingRepository}, {@link EventRepository}, and
+ * {@link BookingProperties} are all mocked; no database involved. For the full stack
+ * see {@link io.callisto.ticketing.BookingJourneyIntegrationTest}.
+ */
+@WebMvcTest(BookingController.class)
 class BookingControllerTest {
 
+	private static final String EVENT_ID = "event-1";
+
 	@Autowired
-	private TestRestTemplate rest;
+	private MockMvc mockMvc;
+
+	@Autowired
+	private ObjectMapper objectMapper;
+
+	@MockitoBean
+	private BookingRepository bookings;
+
+	@MockitoBean
+	private EventRepository events;
+
+	@MockitoBean
+	private BookingProperties bookingProperties;
 
 	@Test
-	void createsFetchesAndCancelsABooking() {
-		String eventId = createEvent();
-		BookingRequest request = new BookingRequest("Ada Lovelace", 2);
+	void createsABooking() throws Exception {
+		when(events.findById(EVENT_ID)).thenReturn(Optional.of(stubEvent()));
+		when(bookingProperties.maxSeatsPerBooking()).thenReturn(8);
+		when(bookings.save(any(Booking.class)))
+				.thenAnswer(invocation -> ((Booking) invocation.getArgument(0)).toBuilder().id("booking-1").build());
 
-		ResponseEntity<BookingResponse> created = rest.postForEntity("/events/" + eventId + "/bookings", request, BookingResponse.class);
-
-		assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-		assertThat(created.getHeaders().getLocation()).isNotNull();
-		assertThat(created.getBody().status()).isEqualTo("CONFIRMED");
-		String bookingId = created.getBody().id();
-
-		ResponseEntity<BookingResponse> fetched = rest.getForEntity("/events/" + eventId + "/bookings/" + bookingId, BookingResponse.class);
-		assertThat(fetched.getStatusCode()).isEqualTo(HttpStatus.OK);
-		assertThat(fetched.getBody().seatCount()).isEqualTo(2);
-
-		ResponseEntity<BookingResponse> cancelled = rest.postForEntity(
-				"/events/" + eventId + "/bookings/" + bookingId + "/cancel", null, BookingResponse.class);
-		assertThat(cancelled.getStatusCode()).isEqualTo(HttpStatus.OK);
-		assertThat(cancelled.getBody().status()).isEqualTo("CANCELLED");
-	}
-
-	@Test
-	void rejectsCancellingTwice() {
-		String eventId = createEvent();
-		String bookingId = createBooking(eventId, "Grace Hopper", 1).id();
-
-		rest.postForEntity("/events/" + eventId + "/bookings/" + bookingId + "/cancel", null, BookingResponse.class);
-		ResponseEntity<ProblemDetail> secondCancel = rest.postForEntity(
-				"/events/" + eventId + "/bookings/" + bookingId + "/cancel", null, ProblemDetail.class);
-
-		assertThat(secondCancel.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+		mockMvc.perform(post("/events/" + EVENT_ID + "/bookings")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsBytes(new BookingRequest("Ada Lovelace", 2))))
+				.andExpect(status().isCreated())
+				.andExpect(header().exists("Location"))
+				.andExpect(jsonPath("$.status").value("CONFIRMED"))
+				.andExpect(jsonPath("$.seatCount").value(2));
 	}
 
 	@Test
-	void rejectsFetchingOrCancellingABookingUnderTheWrongEvent() {
-		String ownerEventId = createEvent();
-		String otherEventId = createEvent();
-		String bookingId = createBooking(ownerEventId, "Hedy Lamarr", 1).id();
+	void rejectsCancellingAnAlreadyCancelledBooking() throws Exception {
+		Booking cancelled = Booking.builder().id("booking-1").eventId(EVENT_ID).customerName("Grace Hopper")
+				.seatCount(1).status(new BookingStatus.Cancelled()).build();
+		when(bookings.findById("booking-1")).thenReturn(Optional.of(cancelled));
 
-		ResponseEntity<ProblemDetail> fetchUnderWrongEvent = rest.getForEntity(
-				"/events/" + otherEventId + "/bookings/" + bookingId, ProblemDetail.class);
-		assertThat(fetchUnderWrongEvent.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-
-		ResponseEntity<ProblemDetail> cancelUnderWrongEvent = rest.postForEntity(
-				"/events/" + otherEventId + "/bookings/" + bookingId + "/cancel", null, ProblemDetail.class);
-		assertThat(cancelUnderWrongEvent.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+		mockMvc.perform(post("/events/" + EVENT_ID + "/bookings/booking-1/cancel"))
+				.andExpect(status().isConflict());
 	}
 
 	@Test
-	void rejectsBookingAnUnknownEvent() {
-		ResponseEntity<ProblemDetail> response = rest.postForEntity(
-				"/events/does-not-exist/bookings", new BookingRequest("Alan Turing", 1), ProblemDetail.class);
+	void rejectsFetchingABookingUnderTheWrongEvent() throws Exception {
+		Booking booking = Booking.builder().id("booking-1").eventId(EVENT_ID).customerName("Hedy Lamarr")
+				.seatCount(1).status(new BookingStatus.Confirmed()).build();
+		when(bookings.findById("booking-1")).thenReturn(Optional.of(booking));
 
-		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+		mockMvc.perform(get("/events/other-event/bookings/booking-1"))
+				.andExpect(status().isNotFound());
 	}
 
 	@Test
-	void rejectsMoreSeatsThanAllowed() {
-		String eventId = createEvent();
+	void rejectsBookingAnUnknownEvent() throws Exception {
+		when(events.findById("does-not-exist")).thenReturn(Optional.empty());
 
-		ResponseEntity<ProblemDetail> response = rest.postForEntity(
-				"/events/" + eventId + "/bookings", new BookingRequest("Margaret Hamilton", 50), ProblemDetail.class);
-
-		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+		mockMvc.perform(post("/events/does-not-exist/bookings")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsBytes(new BookingRequest("Alan Turing", 1))))
+				.andExpect(status().isNotFound());
 	}
 
 	@Test
-	void rejectsAnInvalidBookingRequest() {
-		String eventId = createEvent();
+	void rejectsMoreSeatsThanAllowed() throws Exception {
+		when(events.findById(EVENT_ID)).thenReturn(Optional.of(stubEvent()));
+		when(bookingProperties.maxSeatsPerBooking()).thenReturn(8);
 
-		ResponseEntity<ProblemDetail> response = rest.postForEntity(
-				"/events/" + eventId + "/bookings", new BookingRequest(" ", 1), ProblemDetail.class);
-
-		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-		assertThat(response.getBody().getProperties()).containsKey("errors");
+		mockMvc.perform(post("/events/" + EVENT_ID + "/bookings")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsBytes(new BookingRequest("Margaret Hamilton", 50))))
+				.andExpect(status().isBadRequest());
 	}
 
-	private String createEvent() {
-		EventRequest request = new EventRequest("Jazz Night", "Blue Room", 120, Instant.now().plus(30, ChronoUnit.DAYS));
-		return rest.postForEntity("/events", request, EventResponse.class).getBody().id();
+	@Test
+	void rejectsAnInvalidBookingRequest() throws Exception {
+		mockMvc.perform(post("/events/" + EVENT_ID + "/bookings")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsBytes(new BookingRequest(" ", 1))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors").exists());
 	}
 
-	private BookingResponse createBooking(String eventId, String customerName, int seatCount) {
-		return rest.postForEntity("/events/" + eventId + "/bookings", new BookingRequest(customerName, seatCount), BookingResponse.class).getBody();
+	private static Event stubEvent() {
+		Venue venue = Venue.builder().id("venue-1").name("Blue Room").capacity(120).build();
+		return Event.builder().id(EVENT_ID).name("Jazz Night").venue(venue).startTime(Instant.now()).build();
 	}
 
 }
