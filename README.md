@@ -25,8 +25,8 @@ coding and lab. You are currently on **`session-01-start`**.
 
 This branch has the bare project skeleton plus one deliberately old-style class:
 `BookingReportService` (`io.callisto.ticketing.report`) — a mutable-bean input
-(`LegacyBooking`), a mutable result type (`BookingReportResult`), nested loops, and
-string comparisons for status. It works, and its tests
+(`LegacyBooking`), a mutable result type (`BookingReportResult`), an imperative loop,
+and string comparisons for status. It works, and its tests
 (`BookingReportServiceTest`) pass; it's just painful to read.
 
 **Session 1's lab:** refactor `BookingReportService` using records, sealed types, and
