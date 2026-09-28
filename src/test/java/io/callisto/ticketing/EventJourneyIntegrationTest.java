@@ -18,16 +18,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Full-stack integration test: real HTTP requests through the whole application —
- * controller and repository together — proving the pieces genuinely work together,
- * not just individually. Backed by the in-memory {@code EventRepository} for now;
- * nothing about this test's shape changes once session 3 swaps in a real database —
- * that's the point of testing through the repository's public contract rather than
- * its implementation. Deliberately one broad happy-path journey, not every edge case
- * (those belong in {@link io.callisto.ticketing.catalog.EventControllerTest}).
+ * controller, repository, real Postgres (via {@link AbstractIntegrationTest}) —
+ * proving the pieces genuinely work together, not just individually. Deliberately
+ * one broad journey covering the full Event CRUD lifecycle, not every edge case
+ * (those are {@link io.callisto.ticketing.catalog.EventControllerTest}'s job) —
+ * distinct from {@link BookingJourneyIntegrationTest}, which covers event+booking
+ * interaction rather than Event CRUD completeness.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureTestRestTemplate
-class EventJourneyIntegrationTest {
+class EventJourneyIntegrationTest extends AbstractIntegrationTest {
 
 	@Autowired
 	private TestRestTemplate rest;

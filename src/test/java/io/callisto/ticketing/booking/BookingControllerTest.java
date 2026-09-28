@@ -118,7 +118,7 @@ class BookingControllerTest {
 
 	private static Event stubEvent() {
 		Venue venue = Venue.builder().id("venue-1").name("Blue Room").capacity(120).build();
-		return Event.builder().id(EVENT_ID).name("Jazz Night").venue(venue).startTime(Instant.now()).build();
+		return Event.builder().id(EVENT_ID).name("Jazz Night").venue(venue).startTime(Instant.now()).bookedSeats(0).build();
 	}
 
 }

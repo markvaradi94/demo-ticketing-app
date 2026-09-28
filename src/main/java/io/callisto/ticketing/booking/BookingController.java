@@ -5,6 +5,7 @@ import io.callisto.ticketing.booking.dto.BookingResponse;
 import io.callisto.ticketing.catalog.EventNotFoundException;
 import io.callisto.ticketing.catalog.EventRepository;
 import io.callisto.ticketing.domain.BookingStatus;
+import io.callisto.ticketing.domain.Event;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -28,13 +29,13 @@ public class BookingController {
 
 	@PostMapping
 	public ResponseEntity<BookingResponse> create(@PathVariable String eventId, @Valid @RequestBody BookingRequest request) {
-		if (events.findById(eventId).isEmpty()) {
-			throw new EventNotFoundException(eventId);
-		}
+		Event event = events.findById(eventId).orElseThrow(() -> new EventNotFoundException(eventId));
 
 		if (request.seatCount() > bookingProperties.maxSeatsPerBooking()) {
 			throw new TooManySeatsRequestedException(request.seatCount(), bookingProperties.maxSeatsPerBooking());
 		}
+
+		events.save(event.withBookedSeats(event.getBookedSeats() + request.seatCount()));
 
 		Booking booking = Booking.builder()
 				.eventId(eventId)

@@ -26,8 +26,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Controller-layer test: HTTP contract only — status codes, JSON shape, validation,
- * routing. {@link EventRepository} is mocked; no database involved. For a real
- * end-to-end flow see {@link io.callisto.ticketing.EventJourneyIntegrationTest}.
+ * routing. {@link EventRepository} is mocked; no database involved. For persistence
+ * behavior see {@link EventRepositoryTest}, for full-stack flows see
+ * {@link io.callisto.ticketing.EventJourneyIntegrationTest} and
+ * {@link io.callisto.ticketing.BookingJourneyIntegrationTest}.
  */
 @WebMvcTest(EventController.class)
 class EventControllerTest {

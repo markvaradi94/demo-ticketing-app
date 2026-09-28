@@ -64,7 +64,7 @@ public class EventController {
 
 	private static Event toNewEvent(EventRequest request) {
 		Venue venue = Venue.builder().id(UUID.randomUUID().toString()).name(request.venueName()).capacity(request.venueCapacity()).build();
-		return Event.builder().name(request.name()).venue(venue).startTime(request.startTime()).build();
+		return Event.builder().id(UUID.randomUUID().toString()).name(request.name()).venue(venue).startTime(request.startTime()).build();
 	}
 
 	private static EventResponse toResponse(Event event) {

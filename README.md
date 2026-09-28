@@ -8,12 +8,16 @@ history is the course.
 
 Two branches per session: `session-NN-start` is what you check out before the
 session begins, `session-NN-end` is the finished state after that session's live
-coding and lab. You are currently on **`session-02-end`**.
+coding and lab. You are currently on **`session-03-start`**.
 
 ## Prerequisites
 
 - JDK 25 (Temurin recommended), on your `PATH`. The build does not auto-provision a
   toolchain — install it yourself before running anything below.
+- Docker (Desktop, Podman, or Rancher), running. `./gradlew build` starts an ephemeral
+  Postgres via Testcontainers for tests; `./gradlew bootRun` starts Postgres and
+  MongoDB via `compose/docker-compose.yml` automatically (Spring Boot's Docker Compose
+  support — no manual `docker compose up` needed).
 
 ## Build & test
 
@@ -21,98 +25,64 @@ coding and lab. You are currently on **`session-02-end`**.
 ./gradlew build
 ```
 
-## Where things stand — Session 2: Spring Boot core and REST
+## Where things stand — Session 3: Persistence (start)
 
-Carried over from Session 1: `io.callisto.ticketing.domain` (`Event`, `Venue`, `Seat`,
-`BookingStatus`, `RefundPolicy`) and the refactored `BookingReportService`.
+Carried over from Session 2, unchanged: `io.callisto.ticketing.catalog` (Event CRUD),
+`io.callisto.ticketing.booking` (booking endpoints), `GlobalExceptionHandler`,
+profile-based `BookingProperties`.
 
-**Entities vs value objects, decided this session:** `Event`, `Venue`, and `Booking`
-have identity (an `id` looked up/stored by) and are plain Lombok classes —
-`@Getter @NoArgsConstructor @AllArgsConstructor @Builder(toBuilder = true)
-@EqualsAndHashCode(of = "id")` — not records. Records can't be JPA entities (no
-no-args constructor, immutable fields, can't proxy a `final` class), and separately,
-their all-fields `equals`/`hashCode` is wrong for identity semantics regardless of JPA.
-Everything without identity — `BookingStatus`, `Seat`, `BookingLine`/`BookingReport`,
-every DTO — stays a plain record.
+**New this session — real persistence:**
 
-**Constructor injection:** `EventController` and `BookingController` use
-`@RequiredArgsConstructor` on their `private final` dependency fields instead of a
-hand-written constructor — same rationale, less boilerplate for a well-understood
-pattern.
+- `Event` and `Venue` are now genuine JPA entities (`@Entity`, `@Id`), with
+  `Event → Venue` a real `@ManyToOne(fetch = LAZY, cascade = ALL)`. `EventRepository`
+  is now a bare `interface ... extends JpaRepository<Event, String>` — the actual
+  "swap the in-memory repository for JPA" moment promised since session 2. `Booking`
+  and `BookingStatus` are untouched — persisting `Booking` is this session's **lab
+  task**, not provided baseline.
+- `compose/docker-compose.yml` — Postgres 17 + MongoDB 8, for local `bootRun`.
+  `schema.sql` + `ddl-auto=validate` (no Flyway, per course convention).
+- **Two bugs, planted deliberately, both verified genuine before shipping** (not just
+  theoretical — confirmed with scratch tests, then removed, before committing):
+  - **N+1** — `EventController.list()` already calls `event.getVenue().getName()` per
+    event; now that `Venue` is lazy-loaded, that's N extra `SELECT`s with no artificial
+    planting needed. Visible in the SQL log (`spring.jpa.show-sql=true` is on).
+  - **Lost update** — `Event.bookedSeats`, incremented in `BookingController.create()`,
+    with no `@Version` yet. Two concurrent bookings racing on the same event silently
+    lose one write instead of summing correctly.
 
-Carried over from `session-02-start` — the "provided" baseline, unchanged:
-`io.callisto.ticketing.catalog` (full Event CRUD, in-memory) and its tests. The
-in-memory repositories (`EventRepository`, `BookingRepository`) are deliberate, not a
-shortcut — their method names already mirror Spring Data's `CrudRepository`, so
-Session 3's first live-coding step (swap them for a real `JpaRepository` on Postgres)
-changes the implementation, not the shape the controllers depend on.
+## Testing strategy — all four layers, explicitly
 
-New on this branch:
+This is as much a course topic as the code itself: tests are split by what they
+actually verify, using the lightest tool that can genuinely test it. Previously
+(sessions 1-2) everything was one style of full-stack test — that was correct back
+then, because there was no real persistence layer to isolate anything *from*. Now
+there is, so the split becomes meaningful:
 
-- **Global error handling** — `io.callisto.ticketing.web.GlobalExceptionHandler`
-  (`@RestControllerAdvice`) maps every domain exception to a `ProblemDetail` response:
-  `EventNotFoundException`/`BookingNotFoundException` → 404,
-  `TooManySeatsRequestedException` → 400, `BookingAlreadyCancelledException` → 409,
-  Bean Validation failures → 400 with a field-level `errors` list. Note that
-  `EventNotFoundException` dropped its `@ResponseStatus` annotation from
-  `session-02-start` — the handler owns status codes now, not the exceptions.
-- **`booking` rules config** — `BookingProperties` (`@ConfigurationProperties(prefix =
-  "booking")`), read from `application.properties` (`maxSeatsPerBooking = 8`) and
-  overridden per profile: `application-local.properties` (10),
-  `application-cloud.properties` (6). Run with `--spring.profiles.active=local` or
-  `=cloud` to see it change. `BookingPropertiesProfileTest` covers all three tiers
-  automatically.
-- **`io.callisto.ticketing.booking`** — the lab's outcome. `BookingController`:
-  `POST /events/{eventId}/bookings` (create, 201 + `Location`, starts `Confirmed`),
-  `GET /events/{eventId}/bookings/{bookingId}` (get), `POST
-  /events/{eventId}/bookings/{bookingId}/cancel` (cancel, rejects a second cancel with
-  409). In-memory `BookingRepository`, reusing `BookingStatus` from `session-01-end`'s
-  live coding. `get`/`cancel` verify the booking's `eventId` actually matches the
-  path's `eventId`, not just that the `bookingId` exists — a nested URL implies that
-  parent-child relationship, so it has to be enforced, not just shaped that way. A
-  mismatch returns the same 404 as an unknown booking, deliberately, rather than
-  revealing that the ID exists under a different event.
-- **First CI workflow** — `.github/workflows/build.yml` runs `./gradlew build` on
-  every push and pull request.
+| Layer | Example | Tool | Database? |
+|---|---|---|---|
+| **Unit** | `RefundPolicyTest`, `BookingReportServiceTest` (session 1) | plain JUnit | no |
+| **Controller** | `EventControllerTest`, `BookingControllerTest` | `@WebMvcTest` + `@MockitoBean` on every repository | no |
+| **Persistence** | `EventRepositoryTest` | `@DataJpaTest` + `@AutoConfigureTestDatabase(replace = NONE)` | yes — real Postgres |
+| **Integration** | `EventJourneyIntegrationTest`, `BookingJourneyIntegrationTest` | `@SpringBootTest` + real HTTP (`TestRestTemplate`) | yes — real Postgres |
 
-## Testing strategy — three layers, on purpose
+A fifth, narrower shape: `BookingPropertiesProfileTest` tests `SpringApplication`'s
+own profile-file-loading behavior, so it needs real bootstrap machinery — but not the
+whole app. `@SpringBootTest(classes = MinimalConfig.class)` gets real profile loading
+without pulling in JPA/web/Mongo (`ApplicationContextRunner` would skip profile-file
+loading entirely, which is the one thing this test needs to verify).
 
-- `EventControllerTest`/`BookingControllerTest` — controller/HTTP-contract layer:
-  `@WebMvcTest`, every repository/service dependency mocked (`@MockitoBean`). No
-  database, fast. Verifies status codes, JSON shape, Bean Validation, routing.
-- `BookingJourneyIntegrationTest` — full-stack integration layer: real HTTP
-  (`TestRestTemplate`) through the whole app — create an event, book it, fetch it,
-  cancel it — backed by the real (in-memory, for now) repositories. One broad
-  happy-path journey, not edge cases — those are the controller tests' job.
-- `BookingPropertiesProfileTest` — a narrower shape: this is testing
-  `SpringApplication`'s own profile-file-loading behavior, so it needs real bootstrap
-  machinery (`@SpringBootTest(classes = MinimalConfig.class)`), just scoped down to
-  skip JPA/web/Mongo it doesn't need.
+`AbstractIntegrationTest` provides the database: **one Postgres container, started
+once, shared across every test class that needs it** — not one per class. Each test
+class owns its own data (helper methods building fresh rows with random UUIDs), not
+the shared base. Splitting it any other way caused genuine cross-test-class failures
+during development (Spring's test-context cache colliding with per-class container
+lifecycles) before landing on this pattern.
 
-Why the controller and integration tests both exist: they test different things. The
-controller test proves the HTTP contract is right even if the repository were swapped
-out entirely; the integration test proves the pieces actually wire together. Neither
-substitutes for the other. Nothing about the integration test's *shape* will change
-when session 3 swaps in a real Postgres-backed repository — that's the point of
-testing through the repository's public contract rather than its implementation.
+Both integration tests stay from session 2, now backed by real Postgres instead of
+in-memory — `EventJourneyIntegrationTest` covers the full Event CRUD lifecycle
+(list/update/delete), `BookingJourneyIntegrationTest` covers event+booking
+interaction. Different feature areas, not redundant coverage of the same thing.
 
-**Boot 4 API locations, if you're writing more of these:** `TestRestTemplate` is in
-`org.springframework.boot.resttestclient` (needs `@AutoConfigureTestRestTemplate` and
-`spring-boot-restclient` on the test classpath). `WebMvcTest` is in
-`org.springframework.boot.webmvc.test.autoconfigure`. Mocking a bean is
-`@MockitoBean` (`org.springframework.test.context.bean.override.mockito`), not the
-deprecated `@MockBean`. None of this is pulled in automatically by
-`spring-boot-starter-webmvc-test` alone.
-
-## Homework
-
-Session 2's stretch goal — `@WebMvcTest` tests and pagination on the events list —
-becomes concrete now that `EventControllerTest`/`BookingControllerTest` are worked
-examples: **write a `@WebMvcTest` for a paginated `GET /events` endpoint you add
-yourself**, following the pattern already in `EventControllerTest` (mock the
-repository, assert on the HTTP response). This reinforces this session's testing
-approach rather than introducing anything new, and needs nothing from session 3 to
-attempt.
-
-Next up, Session 3: Postgres/JPA and MongoDB persistence, and the N+1 /
-missing-`@Version` bugs planted for that lab.
+Next up: fix both planted bugs (`@EntityGraph`, `@Version`), persist `Booking`
+(converting `BookingStatus` to an enum along the way), and add MongoDB-backed
+`Review`s with an aggregation — landing on `session-03-end`.
