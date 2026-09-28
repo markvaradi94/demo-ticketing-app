@@ -5,6 +5,7 @@ import io.callisto.ticketing.catalog.dto.EventResponse;
 import io.callisto.ticketing.domain.Event;
 import io.callisto.ticketing.domain.Venue;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,18 +22,15 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/events")
+@RequiredArgsConstructor
 public class EventController {
 
 	private final EventRepository events;
 
-	public EventController(EventRepository events) {
-		this.events = events;
-	}
-
 	@PostMapping
 	public ResponseEntity<EventResponse> create(@Valid @RequestBody EventRequest request) {
 		Event event = events.save(toNewEvent(request));
-		return ResponseEntity.created(URI.create("/events/" + event.id())).body(toResponse(event));
+		return ResponseEntity.created(URI.create("/events/" + event.getId())).body(toResponse(event));
 	}
 
 	@GetMapping
@@ -48,8 +46,8 @@ public class EventController {
 	@PutMapping("/{id}")
 	public EventResponse update(@PathVariable String id, @Valid @RequestBody EventRequest request) {
 		findOrThrow(id);
-		Venue venue = new Venue(UUID.randomUUID().toString(), request.venueName(), request.venueCapacity());
-		Event updated = new Event(id, request.name(), venue, request.startTime());
+		Venue venue = Venue.builder().id(UUID.randomUUID().toString()).name(request.venueName()).capacity(request.venueCapacity()).build();
+		Event updated = Event.builder().id(id).name(request.name()).venue(venue).startTime(request.startTime()).build();
 		return toResponse(events.save(updated));
 	}
 
@@ -65,12 +63,12 @@ public class EventController {
 	}
 
 	private static Event toNewEvent(EventRequest request) {
-		Venue venue = new Venue(UUID.randomUUID().toString(), request.venueName(), request.venueCapacity());
-		return new Event(null, request.name(), venue, request.startTime());
+		Venue venue = Venue.builder().id(UUID.randomUUID().toString()).name(request.venueName()).capacity(request.venueCapacity()).build();
+		return Event.builder().name(request.name()).venue(venue).startTime(request.startTime()).build();
 	}
 
 	private static EventResponse toResponse(Event event) {
-		return new EventResponse(event.id(), event.name(), event.venue().name(), event.venue().capacity(), event.startTime());
+		return new EventResponse(event.getId(), event.getName(), event.getVenue().getName(), event.getVenue().getCapacity(), event.getStartTime());
 	}
 
 }
