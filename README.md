@@ -36,5 +36,28 @@ This is the finished state of Session 1.
   test (null/missing-status tolerance) drops away, because a record can't be built
   from a null required field the way the old mutable bean could.
 
+## Homework
+
+A standalone exercise — a new project, not a change to this repo (next session starts
+from a fresh checkout of `session-02-start`, so nothing committed here would carry
+forward anyway). Domain: a library's late-fee calculator, deliberately unrelated to
+ticketing so it's genuine practice, not copy-adjust.
+
+1. Write a short **imperative first pass**: a mutable `Loan` bean (book title, due
+   date, returned-or-not, etc.) and a `for` loop over a `List<Loan>` that sums a late
+   fee per loan. Keep it small — this step exists to give yourself something real to
+   refactor, the way `session-01-start`'s `LegacyBookingReportService` did.
+2. **Refactor it**, the same way this session's lab turned that class into
+   `BookingReportService`:
+   - `Loan` becomes a record.
+   - Fee status becomes a sealed interface `LoanStatus` — `OnTime`, `Overdue(int
+     daysLate)`, `Lost` — each a record.
+   - The `for` loop becomes a stream pipeline; the per-status fee rule becomes an
+     **exhaustive pattern-matching `switch`** over `LoanStatus`, the same shape as
+     `RefundPolicy` in this repo.
+
+Use `RefundPolicy` and `BookingReportService` (both in this repo) as your pattern
+reference for the exhaustive switch and the stream pipeline, respectively.
+
 Next up, Session 2: Spring Boot's startup internals, real REST endpoints for
 bookings, and the first GitHub Actions workflow.
