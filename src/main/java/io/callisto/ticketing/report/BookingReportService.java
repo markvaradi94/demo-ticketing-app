@@ -22,18 +22,18 @@ public class BookingReportService {
 				.toList();
 
 		int totalSeatsSold = confirmed.stream()
-				.mapToInt(line -> line.seatLabels().size())
+				.mapToInt(BookingLine::seatCount)
 				.sum();
 
 		BigDecimal totalRevenue = confirmed.stream()
-				.map(BookingLine::lineTotal)
+				.map(BookingLine::bookingTotal)
 				.reduce(BigDecimal.ZERO, BigDecimal::add);
 
 		Map<String, BigDecimal> revenueByEvent = confirmed.stream()
 				.collect(Collectors.groupingBy(
 						BookingLine::eventId,
 						TreeMap::new,
-						Collectors.reducing(BigDecimal.ZERO, BookingLine::lineTotal, BigDecimal::add)));
+						Collectors.reducing(BigDecimal.ZERO, BookingLine::bookingTotal, BigDecimal::add)));
 
 		return new BookingReport(totalBookings, totalSeatsSold, totalRevenue, cancelledCount, revenueByEvent);
 	}
