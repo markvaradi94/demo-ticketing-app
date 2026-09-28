@@ -1,70 +1,99 @@
 package io.callisto.ticketing.catalog;
 
 import io.callisto.ticketing.catalog.dto.EventRequest;
-import io.callisto.ticketing.catalog.dto.EventResponse;
+import io.callisto.ticketing.domain.Event;
+import io.callisto.ticketing.domain.Venue;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.resttestclient.TestRestTemplate;
-import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Optional;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@AutoConfigureTestRestTemplate
+/**
+ * Controller-layer test: HTTP contract only — status codes, JSON shape, validation,
+ * routing. {@link EventRepository} is mocked; no database involved. For a real
+ * end-to-end flow see {@link io.callisto.ticketing.EventJourneyIntegrationTest}.
+ */
+@WebMvcTest(EventController.class)
 class EventControllerTest {
 
 	@Autowired
-	private TestRestTemplate rest;
+	private MockMvc mockMvc;
+
+	@Autowired
+	private ObjectMapper objectMapper;
+
+	@MockitoBean
+	private EventRepository events;
 
 	@Test
-	void createsAndFetchesAnEvent() {
+	void createsAnEvent() throws Exception {
 		EventRequest request = new EventRequest("Jazz Night", "Blue Room", 120, Instant.now().plus(30, ChronoUnit.DAYS));
+		when(events.save(any(Event.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-		ResponseEntity<EventResponse> created = rest.postForEntity("/events", request, EventResponse.class);
-
-		assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-		assertThat(created.getHeaders().getLocation()).isNotNull();
-		String id = created.getBody().id();
-
-		ResponseEntity<EventResponse> fetched = rest.getForEntity("/events/" + id, EventResponse.class);
-
-		assertThat(fetched.getStatusCode()).isEqualTo(HttpStatus.OK);
-		assertThat(fetched.getBody().name()).isEqualTo("Jazz Night");
-		assertThat(fetched.getBody().venueCapacity()).isEqualTo(120);
+		mockMvc.perform(post("/events")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsBytes(request)))
+				.andExpect(status().isCreated())
+				.andExpect(header().exists("Location"))
+				.andExpect(jsonPath("$.name").value("Jazz Night"))
+				.andExpect(jsonPath("$.venueCapacity").value(120));
 	}
 
 	@Test
-	void rejectsAnInvalidEvent() {
+	void rejectsAnInvalidEvent() throws Exception {
 		EventRequest blankName = new EventRequest(" ", "Blue Room", 120, Instant.now().plus(30, ChronoUnit.DAYS));
 
-		ResponseEntity<String> response = rest.postForEntity("/events", blankName, String.class);
-
-		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+		mockMvc.perform(post("/events")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsBytes(blankName)))
+				.andExpect(status().isBadRequest());
 	}
 
 	@Test
-	void returnsNotFoundForAnUnknownEvent() {
-		ResponseEntity<String> response = rest.getForEntity("/events/does-not-exist", String.class);
+	void returnsNotFoundForAnUnknownEvent() throws Exception {
+		when(events.findById("does-not-exist")).thenReturn(Optional.empty());
 
-		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+		mockMvc.perform(get("/events/does-not-exist"))
+				.andExpect(status().isNotFound());
 	}
 
 	@Test
-	void deletesAnEvent() {
-		EventRequest request = new EventRequest("Comedy Set", "Attic", 60, Instant.now().plus(10, ChronoUnit.DAYS));
-		String id = rest.postForEntity("/events", request, EventResponse.class).getBody().id();
+	void fetchesAnExistingEvent() throws Exception {
+		Venue venue = Venue.builder().id("venue-1").name("Attic").capacity(60).build();
+		Event event = Event.builder().id("event-1").name("Comedy Set").venue(venue)
+				.startTime(Instant.now().plus(10, ChronoUnit.DAYS)).build();
+		when(events.findById("event-1")).thenReturn(Optional.of(event));
 
-		ResponseEntity<Void> deleted = rest.exchange("/events/" + id, HttpMethod.DELETE, null, Void.class);
+		mockMvc.perform(get("/events/event-1"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.name").value("Comedy Set"))
+				.andExpect(jsonPath("$.venueCapacity").value(60));
+	}
 
-		assertThat(deleted.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-		assertThat(rest.getForEntity("/events/" + id, String.class).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+	@Test
+	void deletesAnEvent() throws Exception {
+		Venue venue = Venue.builder().id("venue-1").name("Attic").capacity(60).build();
+		Event event = Event.builder().id("event-1").name("Comedy Set").venue(venue).startTime(Instant.now()).build();
+		when(events.findById("event-1")).thenReturn(Optional.of(event));
+
+		mockMvc.perform(delete("/events/event-1"))
+				.andExpect(status().isNoContent());
 	}
 
 }

@@ -47,8 +47,23 @@ lab task:
   every DTO.
 - **Constructor injection:** `EventController` uses `@RequiredArgsConstructor` on its
   `private final` dependency field instead of a hand-written constructor.
-- `EventControllerTest` — integration tests over real HTTP (`TestRestTemplate`),
-  covering create/fetch/validate/delete.
+
+**Testing strategy — two layers, on purpose:**
+
+- `EventControllerTest` — controller/HTTP-contract layer: `@WebMvcTest(EventController.class)`
+  with `EventRepository` mocked (`@MockitoBean`). No database, fast. Verifies status
+  codes, JSON shape, Bean Validation, routing.
+- `EventJourneyIntegrationTest` — full-stack integration layer: real HTTP
+  (`TestRestTemplate`) through the whole app, backed by the real (in-memory, for now)
+  `EventRepository`. One broad happy-path journey, not edge cases — those are the
+  controller test's job.
+
+Why both exist: they test different things. The controller test proves the HTTP
+contract is right even if the repository were swapped out entirely; the integration
+test proves the pieces actually wire together. Neither substitutes for the other.
+Nothing about the integration test's *shape* will change when session 3 swaps in a
+real Postgres-backed repository — that's the point of testing through the
+repository's public contract rather than its implementation.
 
 **Session 2's lab:** booking endpoints (create, get, cancel), validated and correctly
 status-coded, plus a global `ProblemDetail` error handler and a `booking` rules
@@ -58,4 +73,7 @@ status-coded, plus a global `ProblemDetail` error handler and a `booking` rules
 **Boot 4 note:** if you're writing HTTP integration tests, `TestRestTemplate` moved to
 `org.springframework.boot.resttestclient`, needs `@AutoConfigureTestRestTemplate`
 explicitly, and needs `spring-boot-restclient` on the test classpath — none of that is
-pulled in automatically by `spring-boot-starter-webmvc-test` alone.
+pulled in automatically by `spring-boot-starter-webmvc-test` alone. For `@WebMvcTest`,
+`WebMvcTest` itself moved to `org.springframework.boot.webmvc.test.autoconfigure`, and
+mocking a bean is `@MockitoBean` (`org.springframework.test.context.bean.override.mockito`),
+not the deprecated `@MockBean`.
