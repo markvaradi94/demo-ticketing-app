@@ -34,6 +34,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class BookingControllerTest {
 
 	private static final Long EVENT_ID = 1L;
+	private static final Long BOOKING_ID = 1L;
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -54,8 +55,7 @@ class BookingControllerTest {
 	void createsABooking() throws Exception {
 		when(events.findById(EVENT_ID)).thenReturn(Optional.of(stubEvent()));
 		when(bookingProperties.maxSeatsPerBooking()).thenReturn(8);
-		when(bookings.save(any(Booking.class)))
-				.thenAnswer(invocation -> ((Booking) invocation.getArgument(0)).toBuilder().id("booking-1").build());
+		when(bookings.save(any(Booking.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
 		mockMvc.perform(post("/events/" + EVENT_ID + "/bookings")
 						.contentType(MediaType.APPLICATION_JSON)
@@ -68,21 +68,21 @@ class BookingControllerTest {
 
 	@Test
 	void rejectsCancellingAnAlreadyCancelledBooking() throws Exception {
-		Booking cancelled = Booking.builder().id("booking-1").eventId(EVENT_ID).customerName("Grace Hopper")
-				.seatCount(1).status(new BookingStatus.Cancelled()).build();
-		when(bookings.findById("booking-1")).thenReturn(Optional.of(cancelled));
+		Booking cancelled = Booking.builder().id(BOOKING_ID).eventId(EVENT_ID).customerName("Grace Hopper")
+				.seatCount(1).status(BookingStatus.CANCELLED).build();
+		when(bookings.findById(BOOKING_ID)).thenReturn(Optional.of(cancelled));
 
-		mockMvc.perform(post("/events/" + EVENT_ID + "/bookings/booking-1/cancel"))
+		mockMvc.perform(post("/events/" + EVENT_ID + "/bookings/" + BOOKING_ID + "/cancel"))
 				.andExpect(status().isConflict());
 	}
 
 	@Test
 	void rejectsFetchingABookingUnderTheWrongEvent() throws Exception {
-		Booking booking = Booking.builder().id("booking-1").eventId(EVENT_ID).customerName("Hedy Lamarr")
-				.seatCount(1).status(new BookingStatus.Confirmed()).build();
-		when(bookings.findById("booking-1")).thenReturn(Optional.of(booking));
+		Booking booking = Booking.builder().id(BOOKING_ID).eventId(EVENT_ID).customerName("Hedy Lamarr")
+				.seatCount(1).status(BookingStatus.CONFIRMED).build();
+		when(bookings.findById(BOOKING_ID)).thenReturn(Optional.of(booking));
 
-		mockMvc.perform(get("/events/999/bookings/booking-1"))
+		mockMvc.perform(get("/events/999/bookings/" + BOOKING_ID))
 				.andExpect(status().isNotFound());
 	}
 

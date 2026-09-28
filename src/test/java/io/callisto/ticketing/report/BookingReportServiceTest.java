@@ -14,9 +14,9 @@ class BookingReportServiceTest {
 
 	@Test
 	void countsOnlyConfirmedBookingsTowardsRevenue() {
-		BookingLine confirmed = line("evt-1", new BookingStatus.Confirmed(), 2, "25.00");
-		BookingLine pending = line("evt-1", new BookingStatus.Pending(), 1, "25.00");
-		BookingLine cancelled = line("evt-1", new BookingStatus.Cancelled(), 1, "25.00");
+		BookingLine confirmed = line("evt-1", BookingStatus.CONFIRMED, 2, "25.00");
+		BookingLine pending = line("evt-1", BookingStatus.PENDING, 1, "25.00");
+		BookingLine cancelled = line("evt-1", BookingStatus.CANCELLED, 1, "25.00");
 
 		BookingReport report = service.generateReport(List.of(confirmed, pending, cancelled));
 
@@ -28,8 +28,8 @@ class BookingReportServiceTest {
 
 	@Test
 	void aggregatesRevenuePerEvent() {
-		BookingLine eventOne = line("evt-1", new BookingStatus.Confirmed(), 1, "40.00");
-		BookingLine eventTwo = line("evt-2", new BookingStatus.Confirmed(), 2, "10.00");
+		BookingLine eventOne = line("evt-1", BookingStatus.CONFIRMED, 1, "40.00");
+		BookingLine eventTwo = line("evt-2", BookingStatus.CONFIRMED, 2, "10.00");
 
 		BookingReport report = service.generateReport(List.of(eventOne, eventTwo));
 

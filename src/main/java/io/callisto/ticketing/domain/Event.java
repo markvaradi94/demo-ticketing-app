@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -42,6 +43,13 @@ public class Event {
 
 	@Builder.Default
 	private int bookedSeats = 0;
+
+	// Fixes the lost update: two concurrent bookedSeats writes on the same row now
+	// race on this instead of silently overwriting each other — the second save()
+	// throws ObjectOptimisticLockingFailureException, mapped to 409 by
+	// GlobalExceptionHandler. Left null on new entities; Hibernate seeds it on insert.
+	@Version
+	private Long version;
 
 	public Event withBookedSeats(int newBookedSeats) {
 		return toBuilder().bookedSeats(newBookedSeats).build();

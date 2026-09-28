@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
@@ -44,7 +45,7 @@ class BookingJourneyIntegrationTest extends AbstractIntegrationTest {
 				"/events/" + eventId + "/bookings", bookingRequest, BookingResponse.class);
 		assertThat(bookingCreated.getStatusCode()).isEqualTo(HttpStatus.CREATED);
 		assertThat(bookingCreated.getBody().status()).isEqualTo("CONFIRMED");
-		String bookingId = bookingCreated.getBody().id();
+		Long bookingId = bookingCreated.getBody().id();
 
 		ResponseEntity<BookingResponse> fetched = rest.getForEntity(
 				"/events/" + eventId + "/bookings/" + bookingId, BookingResponse.class);
@@ -55,6 +56,10 @@ class BookingJourneyIntegrationTest extends AbstractIntegrationTest {
 				"/events/" + eventId + "/bookings/" + bookingId + "/cancel", null, BookingResponse.class);
 		assertThat(cancelled.getStatusCode()).isEqualTo(HttpStatus.OK);
 		assertThat(cancelled.getBody().status()).isEqualTo("CANCELLED");
+
+		// Real HTTP against the shared container, same as EventJourneyIntegrationTest —
+		// clean up what this test created rather than leaving it for the next test.
+		rest.exchange("/events/" + eventId, HttpMethod.DELETE, null, Void.class);
 	}
 
 }

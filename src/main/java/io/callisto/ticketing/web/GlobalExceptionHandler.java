@@ -6,6 +6,7 @@ import io.callisto.ticketing.booking.TooManySeatsRequestedException;
 import io.callisto.ticketing.catalog.EventNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -28,6 +29,11 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(BookingAlreadyCancelledException.class)
 	public ProblemDetail handleAlreadyCancelled(BookingAlreadyCancelledException exception) {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+	}
+
+	@ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+	public ProblemDetail handleOptimisticLock(ObjectOptimisticLockingFailureException exception) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "This record was updated by someone else — reload and try again.");
 	}
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)

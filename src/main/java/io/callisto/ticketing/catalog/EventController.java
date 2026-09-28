@@ -44,9 +44,13 @@ public class EventController {
 
 	@PutMapping("/{id}")
 	public EventResponse update(@PathVariable Long id, @Valid @RequestBody EventRequest request) {
-		findOrThrow(id);
+		Event existing = findOrThrow(id);
 		Venue venue = Venue.builder().name(request.venueName()).capacity(request.venueCapacity()).build();
-		Event updated = Event.builder().id(id).name(request.name()).venue(venue).startTime(request.startTime()).build();
+		// toBuilder() off the loaded entity, not a fresh builder() — carries over id
+		// *and* version. Rebuilding from scratch left version null, which Spring Data
+		// reads as "this is a new entity" once Event has an @Version field, and
+		// persist() on an id that already exists blows up instead of updating it.
+		Event updated = existing.toBuilder().name(request.name()).venue(venue).startTime(request.startTime()).build();
 		return toResponse(events.save(updated));
 	}
 

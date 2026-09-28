@@ -14,11 +14,11 @@ public class BookingReportService {
 		int totalBookings = bookings.size();
 
 		int cancelledCount = (int) bookings.stream()
-				.filter(line -> line.status() instanceof BookingStatus.Cancelled)
+				.filter(line -> line.status() == BookingStatus.CANCELLED)
 				.count();
 
 		List<BookingLine> confirmed = bookings.stream()
-				.filter(line -> line.status() instanceof BookingStatus.Confirmed)
+				.filter(line -> line.status() == BookingStatus.CONFIRMED)
 				.toList();
 
 		int totalSeatsSold = confirmed.stream()

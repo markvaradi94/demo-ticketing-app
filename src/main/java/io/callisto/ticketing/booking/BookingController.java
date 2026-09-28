@@ -37,11 +37,13 @@ public class BookingController {
 
 		events.save(event.withBookedSeats(event.getBookedSeats() + request.seatCount()));
 
+		// No id set — generated via the bookings table's identity column, same
+		// convention as Event/Venue.
 		Booking booking = Booking.builder()
 				.eventId(eventId)
 				.customerName(request.customerName())
 				.seatCount(request.seatCount())
-				.status(new BookingStatus.Confirmed())
+				.status(BookingStatus.CONFIRMED)
 				.build();
 		Booking saved = bookings.save(booking);
 		URI location = URI.create("/events/" + eventId + "/bookings/" + saved.getId());
@@ -49,21 +51,21 @@ public class BookingController {
 	}
 
 	@GetMapping("/{bookingId}")
-	public BookingResponse get(@PathVariable Long eventId, @PathVariable String bookingId) {
+	public BookingResponse get(@PathVariable Long eventId, @PathVariable Long bookingId) {
 		return toResponse(findOrThrow(eventId, bookingId));
 	}
 
 	@PostMapping("/{bookingId}/cancel")
-	public BookingResponse cancel(@PathVariable Long eventId, @PathVariable String bookingId) {
+	public BookingResponse cancel(@PathVariable Long eventId, @PathVariable Long bookingId) {
 		Booking booking = findOrThrow(eventId, bookingId);
-		if (booking.getStatus() instanceof BookingStatus.Cancelled) {
+		if (booking.getStatus() == BookingStatus.CANCELLED) {
 			throw new BookingAlreadyCancelledException(bookingId);
 		}
-		Booking cancelled = booking.toBuilder().status(new BookingStatus.Cancelled()).build();
+		Booking cancelled = booking.toBuilder().status(BookingStatus.CANCELLED).build();
 		return toResponse(bookings.save(cancelled));
 	}
 
-	private Booking findOrThrow(Long eventId, String bookingId) {
+	private Booking findOrThrow(Long eventId, Long bookingId) {
 		Booking booking = bookings.findById(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
 		if (!booking.getEventId().equals(eventId)) {
 			throw new BookingNotFoundException(bookingId);
@@ -72,15 +74,7 @@ public class BookingController {
 	}
 
 	private static BookingResponse toResponse(Booking booking) {
-		return new BookingResponse(booking.getId(), booking.getEventId(), booking.getCustomerName(), booking.getSeatCount(), statusName(booking.getStatus()));
-	}
-
-	private static String statusName(BookingStatus status) {
-		return switch (status) {
-			case BookingStatus.Pending ignored -> "PENDING";
-			case BookingStatus.Confirmed ignored -> "CONFIRMED";
-			case BookingStatus.Cancelled ignored -> "CANCELLED";
-		};
+		return new BookingResponse(booking.getId(), booking.getEventId(), booking.getCustomerName(), booking.getSeatCount(), booking.getStatus().name());
 	}
 
 }
