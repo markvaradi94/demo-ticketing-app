@@ -106,13 +106,18 @@ deprecated `@MockBean`. None of this is pulled in automatically by
 
 ## Homework
 
-Session 2's stretch goal — `@WebMvcTest` tests and pagination on the events list —
-becomes concrete now that `EventControllerTest`/`BookingControllerTest` are worked
-examples: **write a `@WebMvcTest` for a paginated `GET /events` endpoint you add
-yourself**, following the pattern already in `EventControllerTest` (mock the
-repository, assert on the HTTP response). This reinforces this session's testing
-approach rather than introducing anything new, and needs nothing from session 3 to
-attempt.
+A standalone exercise, not a change to this repo — next session starts from a fresh
+checkout of `session-03-start`, so anything committed here wouldn't carry forward
+anyway. Starting from a **new `start.spring.io` project** (Spring Boot 4.1.1, Java 25,
+Web), build one paginated `GET` endpoint over a small in-memory list of your choosing,
+and write a `@WebMvcTest` for it — mock the data source, assert on the HTTP response's
+shape and paging metadata. Use `EventControllerTest` in this repo as your pattern
+reference for how a controller test mocks its dependency and asserts on `MockMvc`
+results.
+
+Building it as its own small project, rather than inside this one, is deliberate: it
+practices the whole skill — initializing a project, wiring the one dependency you
+need, writing the test — not just editing inside something already assembled.
 
 Next up, Session 3: Postgres/JPA and MongoDB persistence, and the N+1 /
 missing-`@Version` bugs planted for that lab.
