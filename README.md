@@ -30,8 +30,8 @@ This is the finished state of Session 1.
   introduced during the session's live coding. `RefundPolicy` shows it put to use in
   an exhaustive pattern-matching `switch`.
 - `io.callisto.ticketing.report` — `BookingReportService`, the lab's outcome:
-  refactored from the mutable-bean, nested-loop version on `session-01-start` into a
-  stream pipeline over the records `BookingLine` and `BookingReport`. Its tests
+  refactored from the mutable-bean, imperative-loop version on `session-01-start` into
+  a stream pipeline over the records `BookingLine` and `BookingReport`. Its tests
   (`BookingReportServiceTest`) cover the same scenarios as the start branch's — one
   test (null/missing-status tolerance) drops away, because a record can't be built
   from a null required field the way the old mutable bean could.

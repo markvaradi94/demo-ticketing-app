@@ -14,9 +14,9 @@ class BookingReportServiceTest {
 
 	@Test
 	void countsOnlyConfirmedBookingsTowardsRevenue() {
-		BookingLine confirmed = line("evt-1", new BookingStatus.Confirmed(), List.of("A1", "A2"), "25.00");
-		BookingLine pending = line("evt-1", new BookingStatus.Pending(), List.of("B1"), "25.00");
-		BookingLine cancelled = line("evt-1", new BookingStatus.Cancelled(), List.of("C1"), "25.00");
+		BookingLine confirmed = line("evt-1", new BookingStatus.Confirmed(), 2, "25.00");
+		BookingLine pending = line("evt-1", new BookingStatus.Pending(), 1, "25.00");
+		BookingLine cancelled = line("evt-1", new BookingStatus.Cancelled(), 1, "25.00");
 
 		BookingReport report = service.generateReport(List.of(confirmed, pending, cancelled));
 
@@ -28,8 +28,8 @@ class BookingReportServiceTest {
 
 	@Test
 	void aggregatesRevenuePerEvent() {
-		BookingLine eventOne = line("evt-1", new BookingStatus.Confirmed(), List.of("A1"), "40.00");
-		BookingLine eventTwo = line("evt-2", new BookingStatus.Confirmed(), List.of("A1", "A2"), "10.00");
+		BookingLine eventOne = line("evt-1", new BookingStatus.Confirmed(), 1, "40.00");
+		BookingLine eventTwo = line("evt-2", new BookingStatus.Confirmed(), 2, "10.00");
 
 		BookingReport report = service.generateReport(List.of(eventOne, eventTwo));
 
@@ -47,8 +47,8 @@ class BookingReportServiceTest {
 		assertThat(report.revenueByEvent()).isEmpty();
 	}
 
-	private static BookingLine line(String eventId, BookingStatus status, List<String> seatLabels, String pricePerSeat) {
-		return new BookingLine(eventId, status, seatLabels, new BigDecimal(pricePerSeat));
+	private static BookingLine line(String eventId, BookingStatus status, int seatCount, String pricePerSeat) {
+		return new BookingLine(eventId, status, seatCount, new BigDecimal(pricePerSeat));
 	}
 
 }
