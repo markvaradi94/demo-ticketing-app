@@ -37,7 +37,7 @@ class BookingJourneyIntegrationTest extends AbstractIntegrationTest {
 		EventRequest eventRequest = new EventRequest("Jazz Night", "Blue Room", 120, Instant.now().plus(30, ChronoUnit.DAYS));
 		ResponseEntity<EventResponse> eventCreated = rest.postForEntity("/events", eventRequest, EventResponse.class);
 		assertThat(eventCreated.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-		String eventId = eventCreated.getBody().id();
+		Long eventId = eventCreated.getBody().id();
 
 		BookingRequest bookingRequest = new BookingRequest("Ada Lovelace", 2);
 		ResponseEntity<BookingResponse> bookingCreated = rest.postForEntity(

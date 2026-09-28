@@ -28,7 +28,7 @@ public class BookingController {
 	private final BookingProperties bookingProperties;
 
 	@PostMapping
-	public ResponseEntity<BookingResponse> create(@PathVariable String eventId, @Valid @RequestBody BookingRequest request) {
+	public ResponseEntity<BookingResponse> create(@PathVariable Long eventId, @Valid @RequestBody BookingRequest request) {
 		Event event = events.findById(eventId).orElseThrow(() -> new EventNotFoundException(eventId));
 
 		if (request.seatCount() > bookingProperties.maxSeatsPerBooking()) {
@@ -49,12 +49,12 @@ public class BookingController {
 	}
 
 	@GetMapping("/{bookingId}")
-	public BookingResponse get(@PathVariable String eventId, @PathVariable String bookingId) {
+	public BookingResponse get(@PathVariable Long eventId, @PathVariable String bookingId) {
 		return toResponse(findOrThrow(eventId, bookingId));
 	}
 
 	@PostMapping("/{bookingId}/cancel")
-	public BookingResponse cancel(@PathVariable String eventId, @PathVariable String bookingId) {
+	public BookingResponse cancel(@PathVariable Long eventId, @PathVariable String bookingId) {
 		Booking booking = findOrThrow(eventId, bookingId);
 		if (booking.getStatus() instanceof BookingStatus.Cancelled) {
 			throw new BookingAlreadyCancelledException(bookingId);
@@ -63,7 +63,7 @@ public class BookingController {
 		return toResponse(bookings.save(cancelled));
 	}
 
-	private Booking findOrThrow(String eventId, String bookingId) {
+	private Booking findOrThrow(Long eventId, String bookingId) {
 		Booking booking = bookings.findById(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
 		if (!booking.getEventId().equals(eventId)) {
 			throw new BookingNotFoundException(bookingId);

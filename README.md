@@ -35,10 +35,17 @@ profile-based `BookingProperties`.
 
 - `Event` and `Venue` are now genuine JPA entities (`@Entity`, `@Id`), with
   `Event → Venue` a real `@ManyToOne(fetch = LAZY, cascade = ALL)`. `EventRepository`
-  is now a bare `interface ... extends JpaRepository<Event, String>` — the actual
+  is now a bare `interface ... extends JpaRepository<Event, Long>` — the actual
   "swap the in-memory repository for JPA" moment promised since session 2. `Booking`
   and `BookingStatus` are untouched — persisting `Booking` is this session's **lab
   task**, not provided baseline.
+- **Ids for `Event`/`Venue` are auto-generated now** (`Long`, `@GeneratedValue(strategy
+  = IDENTITY)`, backed by a Postgres identity column), not app-assigned UUID strings
+  like sessions 1-2. Real persistence brings a real auto-increment, and it's genuinely
+  closer to how relational schemas look in practice than assigning ids ourselves.
+  `Booking.eventId` follows along as a `Long` too, since it references `Event`'s id —
+  `Booking`'s own id stays a UUID string for now, since `Booking` itself isn't a JPA
+  entity yet on this branch.
 - `compose/docker-compose.yml` — Postgres 17 + MongoDB 8, for local `bootRun`.
   `schema.sql` + `ddl-auto=validate` (no Flyway, per course convention).
 - **Two bugs, planted deliberately, both verified genuine before shipping** (not just

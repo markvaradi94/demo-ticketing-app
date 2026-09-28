@@ -10,7 +10,6 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 
 import java.time.Instant;
 import java.util.Optional;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,12 +29,12 @@ class EventRepositoryTest extends AbstractIntegrationTest {
 
 	@Test
 	void savesAndReloadsAnEventWithItsVenue() {
-		Venue venue = Venue.builder().id(UUID.randomUUID().toString()).name("Blue Room").capacity(120).build();
-		Event event = Event.builder().id(UUID.randomUUID().toString()).name("Jazz Night").venue(venue).startTime(Instant.now()).build();
+		Venue venue = Venue.builder().name("Blue Room").capacity(120).build();
+		Event event = Event.builder().name("Jazz Night").venue(venue).startTime(Instant.now()).build();
 
-		events.save(event);
+		Event saved = events.save(event);
 
-		Optional<Event> reloaded = events.findById(event.getId());
+		Optional<Event> reloaded = events.findById(saved.getId());
 
 		assertThat(reloaded).isPresent();
 		assertThat(reloaded.get().getName()).isEqualTo("Jazz Night");
@@ -45,7 +44,7 @@ class EventRepositoryTest extends AbstractIntegrationTest {
 
 	@Test
 	void returnsEmptyForAnUnknownId() {
-		assertThat(events.findById(UUID.randomUUID().toString())).isEmpty();
+		assertThat(events.findById(-1L)).isEmpty();
 	}
 
 }

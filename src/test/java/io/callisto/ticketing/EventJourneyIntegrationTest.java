@@ -39,7 +39,7 @@ class EventJourneyIntegrationTest extends AbstractIntegrationTest {
 		ResponseEntity<EventResponse> created = rest.postForEntity("/events", request, EventResponse.class);
 		assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
 		assertThat(created.getHeaders().getLocation()).isNotNull();
-		String id = created.getBody().id();
+		Long id = created.getBody().id();
 
 		ResponseEntity<EventResponse[]> listed = rest.getForEntity("/events", EventResponse[].class);
 		assertThat(listed.getStatusCode()).isEqualTo(HttpStatus.OK);

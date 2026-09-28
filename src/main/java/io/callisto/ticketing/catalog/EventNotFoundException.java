@@ -2,7 +2,7 @@ package io.callisto.ticketing.catalog;
 
 public class EventNotFoundException extends RuntimeException {
 
-	public EventNotFoundException(String eventId) {
+	public EventNotFoundException(Long eventId) {
 		super("No event with id " + eventId);
 	}
 

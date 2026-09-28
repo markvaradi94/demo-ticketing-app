@@ -69,20 +69,20 @@ class EventControllerTest {
 
 	@Test
 	void returnsNotFoundForAnUnknownEvent() throws Exception {
-		when(events.findById("does-not-exist")).thenReturn(Optional.empty());
+		when(events.findById(999L)).thenReturn(Optional.empty());
 
-		mockMvc.perform(get("/events/does-not-exist"))
+		mockMvc.perform(get("/events/999"))
 				.andExpect(status().isNotFound());
 	}
 
 	@Test
 	void fetchesAnExistingEvent() throws Exception {
-		Venue venue = Venue.builder().id("venue-1").name("Attic").capacity(60).build();
-		Event event = Event.builder().id("event-1").name("Comedy Set").venue(venue)
+		Venue venue = Venue.builder().id(1L).name("Attic").capacity(60).build();
+		Event event = Event.builder().id(1L).name("Comedy Set").venue(venue)
 				.startTime(Instant.now().plus(10, ChronoUnit.DAYS)).build();
-		when(events.findById("event-1")).thenReturn(Optional.of(event));
+		when(events.findById(1L)).thenReturn(Optional.of(event));
 
-		mockMvc.perform(get("/events/event-1"))
+		mockMvc.perform(get("/events/1"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.name").value("Comedy Set"))
 				.andExpect(jsonPath("$.venueCapacity").value(60));
@@ -90,11 +90,11 @@ class EventControllerTest {
 
 	@Test
 	void deletesAnEvent() throws Exception {
-		Venue venue = Venue.builder().id("venue-1").name("Attic").capacity(60).build();
-		Event event = Event.builder().id("event-1").name("Comedy Set").venue(venue).startTime(Instant.now()).build();
-		when(events.findById("event-1")).thenReturn(Optional.of(event));
+		Venue venue = Venue.builder().id(1L).name("Attic").capacity(60).build();
+		Event event = Event.builder().id(1L).name("Comedy Set").venue(venue).startTime(Instant.now()).build();
+		when(events.findById(1L)).thenReturn(Optional.of(event));
 
-		mockMvc.perform(delete("/events/event-1"))
+		mockMvc.perform(delete("/events/1"))
 				.andExpect(status().isNoContent());
 	}
 

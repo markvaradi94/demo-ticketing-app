@@ -33,7 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(BookingController.class)
 class BookingControllerTest {
 
-	private static final String EVENT_ID = "event-1";
+	private static final Long EVENT_ID = 1L;
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -82,15 +82,15 @@ class BookingControllerTest {
 				.seatCount(1).status(new BookingStatus.Confirmed()).build();
 		when(bookings.findById("booking-1")).thenReturn(Optional.of(booking));
 
-		mockMvc.perform(get("/events/other-event/bookings/booking-1"))
+		mockMvc.perform(get("/events/999/bookings/booking-1"))
 				.andExpect(status().isNotFound());
 	}
 
 	@Test
 	void rejectsBookingAnUnknownEvent() throws Exception {
-		when(events.findById("does-not-exist")).thenReturn(Optional.empty());
+		when(events.findById(999L)).thenReturn(Optional.empty());
 
-		mockMvc.perform(post("/events/does-not-exist/bookings")
+		mockMvc.perform(post("/events/999/bookings")
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(objectMapper.writeValueAsBytes(new BookingRequest("Alan Turing", 1))))
 				.andExpect(status().isNotFound());
@@ -117,7 +117,7 @@ class BookingControllerTest {
 	}
 
 	private static Event stubEvent() {
-		Venue venue = Venue.builder().id("venue-1").name("Blue Room").capacity(120).build();
+		Venue venue = Venue.builder().id(1L).name("Blue Room").capacity(120).build();
 		return Event.builder().id(EVENT_ID).name("Jazz Night").venue(venue).startTime(Instant.now()).bookedSeats(0).build();
 	}
 

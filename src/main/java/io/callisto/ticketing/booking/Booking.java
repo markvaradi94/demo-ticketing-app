@@ -17,7 +17,7 @@ import lombok.ToString;
 public class Booking {
 
 	private String id;
-	private String eventId;
+	private Long eventId;
 	private String customerName;
 	private int seatCount;
 	private BookingStatus status;

@@ -18,7 +18,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
 import java.util.List;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/events")
@@ -39,32 +38,32 @@ public class EventController {
 	}
 
 	@GetMapping("/{id}")
-	public EventResponse get(@PathVariable String id) {
+	public EventResponse get(@PathVariable Long id) {
 		return toResponse(findOrThrow(id));
 	}
 
 	@PutMapping("/{id}")
-	public EventResponse update(@PathVariable String id, @Valid @RequestBody EventRequest request) {
+	public EventResponse update(@PathVariable Long id, @Valid @RequestBody EventRequest request) {
 		findOrThrow(id);
-		Venue venue = Venue.builder().id(UUID.randomUUID().toString()).name(request.venueName()).capacity(request.venueCapacity()).build();
+		Venue venue = Venue.builder().name(request.venueName()).capacity(request.venueCapacity()).build();
 		Event updated = Event.builder().id(id).name(request.name()).venue(venue).startTime(request.startTime()).build();
 		return toResponse(events.save(updated));
 	}
 
 	@DeleteMapping("/{id}")
-	public ResponseEntity<Void> delete(@PathVariable String id) {
+	public ResponseEntity<Void> delete(@PathVariable Long id) {
 		findOrThrow(id);
 		events.deleteById(id);
 		return ResponseEntity.noContent().build();
 	}
 
-	private Event findOrThrow(String id) {
+	private Event findOrThrow(Long id) {
 		return events.findById(id).orElseThrow(() -> new EventNotFoundException(id));
 	}
 
 	private static Event toNewEvent(EventRequest request) {
-		Venue venue = Venue.builder().id(UUID.randomUUID().toString()).name(request.venueName()).capacity(request.venueCapacity()).build();
-		return Event.builder().id(UUID.randomUUID().toString()).name(request.name()).venue(venue).startTime(request.startTime()).build();
+		Venue venue = Venue.builder().name(request.venueName()).capacity(request.venueCapacity()).build();
+		return Event.builder().name(request.name()).venue(venue).startTime(request.startTime()).build();
 	}
 
 	private static EventResponse toResponse(Event event) {
