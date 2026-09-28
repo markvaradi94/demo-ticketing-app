@@ -33,7 +33,20 @@ lab task:
   `EventController`), with request/response DTOs and Bean Validation
   (`EventRequest`/`EventResponse`). `EventNotFoundException` is `@ResponseStatus`-based
   for now — deliberately, so the session's live coding has an ugly default error body
-  to replace with `ProblemDetail`.
+  to replace with `ProblemDetail`. `EventRepository` is deliberately in-memory, not a
+  shortcut — its method names already mirror Spring Data's `CrudRepository`, so
+  Session 3's first live-coding step (swap it for a real `JpaRepository` on Postgres)
+  changes the implementation, not the shape `EventController` depends on.
+- **Entities vs value objects:** `Event` and `Venue` have identity (an `id`
+  looked up/stored by) and are plain Lombok classes —
+  `@Getter @NoArgsConstructor @AllArgsConstructor @Builder(toBuilder = true)
+  @EqualsAndHashCode(of = "id")` — not records. Records can't be JPA entities (no
+  no-args constructor, immutable fields, can't proxy a `final` class), and separately,
+  their all-fields `equals`/`hashCode` is wrong for identity semantics regardless of
+  JPA. `BookingStatus` and `Seat` have no identity and stay plain records, same as
+  every DTO.
+- **Constructor injection:** `EventController` uses `@RequiredArgsConstructor` on its
+  `private final` dependency field instead of a hand-written constructor.
 - `EventControllerTest` — integration tests over real HTTP (`TestRestTemplate`),
   covering create/fetch/validate/delete.
 
