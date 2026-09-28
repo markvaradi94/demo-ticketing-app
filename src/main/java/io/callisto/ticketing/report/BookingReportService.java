@@ -18,8 +18,7 @@ public class BookingReportService {
 		int cancelled = 0;
 		Map<String, Double> revenueByEvent = new HashMap<>();
 
-		for (int i = 0; i < bookings.size(); i++) {
-			LegacyBooking booking = bookings.get(i);
+		for (LegacyBooking booking : bookings) {
 			if (booking == null || booking.getStatus() == null) {
 				continue;
 			}
@@ -35,26 +34,17 @@ public class BookingReportService {
 				continue;
 			}
 
-			int seatsInBooking = 0;
-			if (booking.getSeatLabels() != null) {
-				for (int j = 0; j < booking.getSeatLabels().size(); j++) {
-					if (booking.getSeatLabels().get(j) != null) {
-						seatsInBooking++;
-					}
-				}
-			}
-
-			double lineTotal = seatsInBooking * booking.getPricePerSeat();
-			seatsSold = seatsSold + seatsInBooking;
-			revenue = revenue + lineTotal;
+			double bookingTotal = booking.getSeatCount() * booking.getPricePerSeat();
+			seatsSold = seatsSold + booking.getSeatCount();
+			revenue = revenue + bookingTotal;
 
 			String eventId = booking.getEventId();
 			if (eventId != null) {
 				Double existing = revenueByEvent.get(eventId);
 				if (existing == null) {
-					revenueByEvent.put(eventId, lineTotal);
+					revenueByEvent.put(eventId, bookingTotal);
 				} else {
-					revenueByEvent.put(eventId, existing + lineTotal);
+					revenueByEvent.put(eventId, existing + bookingTotal);
 				}
 			}
 		}

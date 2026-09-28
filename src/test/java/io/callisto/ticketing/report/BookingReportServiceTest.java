@@ -13,9 +13,9 @@ class BookingReportServiceTest {
 
 	@Test
 	void countsOnlyConfirmedBookingsTowardsRevenue() {
-		LegacyBooking confirmed = booking("evt-1", "CONFIRMED", List.of("A1", "A2"), 25.0);
-		LegacyBooking pending = booking("evt-1", "PENDING", List.of("B1"), 25.0);
-		LegacyBooking cancelled = booking("evt-1", "CANCELLED", List.of("C1"), 25.0);
+		LegacyBooking confirmed = booking("evt-1", "CONFIRMED", 2, 25.0);
+		LegacyBooking pending = booking("evt-1", "PENDING", 1, 25.0);
+		LegacyBooking cancelled = booking("evt-1", "CANCELLED", 1, 25.0);
 
 		BookingReportResult result = service.generateReport(List.of(confirmed, pending, cancelled));
 
@@ -27,8 +27,8 @@ class BookingReportServiceTest {
 
 	@Test
 	void aggregatesRevenuePerEvent() {
-		LegacyBooking eventOne = booking("evt-1", "CONFIRMED", List.of("A1"), 40.0);
-		LegacyBooking eventTwo = booking("evt-2", "CONFIRMED", List.of("A1", "A2"), 10.0);
+		LegacyBooking eventOne = booking("evt-1", "CONFIRMED", 1, 40.0);
+		LegacyBooking eventTwo = booking("evt-2", "CONFIRMED", 2, 10.0);
 
 		BookingReportResult result = service.generateReport(List.of(eventOne, eventTwo));
 
@@ -56,11 +56,11 @@ class BookingReportServiceTest {
 		assertThat(result.getTotalBookings()).isZero();
 	}
 
-	private static LegacyBooking booking(String eventId, String status, List<String> seatLabels, double pricePerSeat) {
+	private static LegacyBooking booking(String eventId, String status, int seatCount, double pricePerSeat) {
 		LegacyBooking booking = new LegacyBooking();
 		booking.setEventId(eventId);
 		booking.setStatus(status);
-		booking.setSeatLabels(seatLabels);
+		booking.setSeatCount(seatCount);
 		booking.setPricePerSeat(pricePerSeat);
 		return booking;
 	}

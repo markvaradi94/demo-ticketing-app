@@ -1,12 +1,10 @@
 package io.callisto.ticketing.report;
 
-import java.util.List;
-
 public class LegacyBooking {
 
 	private String eventId;
 	private String status;
-	private List<String> seatLabels;
+	private int seatCount;
 	private double pricePerSeat;
 
 	public LegacyBooking() {
@@ -28,12 +26,12 @@ public class LegacyBooking {
 		this.status = status;
 	}
 
-	public List<String> getSeatLabels() {
-		return seatLabels;
+	public int getSeatCount() {
+		return seatCount;
 	}
 
-	public void setSeatLabels(List<String> seatLabels) {
-		this.seatLabels = seatLabels;
+	public void setSeatCount(int seatCount) {
+		this.seatCount = seatCount;
 	}
 
 	public double getPricePerSeat() {
