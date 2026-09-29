@@ -1,10 +1,9 @@
 package io.callisto.ticketing.booking;
 
 import io.callisto.ticketing.AbstractIntegrationTest;
-import io.callisto.ticketing.domain.BookingStatus;
-import io.callisto.ticketing.domain.Event;
-import io.callisto.ticketing.domain.Venue;
+import io.callisto.ticketing.catalog.Event;
 import io.callisto.ticketing.catalog.EventRepository;
+import io.callisto.ticketing.catalog.Venue;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;

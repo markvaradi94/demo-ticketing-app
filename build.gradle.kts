@@ -22,6 +22,7 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 	implementation("org.springframework.boot:spring-boot-starter-data-mongodb")
+	implementation(libs.spring.modulith.starter.core)
 	runtimeOnly("org.postgresql:postgresql")
 	compileOnly("org.projectlombok:lombok")
 	annotationProcessor("org.projectlombok:lombok")
@@ -34,6 +35,7 @@ dependencies {
 	testImplementation("org.springframework.boot:spring-boot-testcontainers")
 	testImplementation(libs.testcontainers.postgresql)
 	testImplementation(libs.testcontainers.mongodb)
+	testImplementation(libs.spring.modulith.starter.test)
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

@@ -2,10 +2,9 @@ package io.callisto.ticketing.booking;
 
 import io.callisto.ticketing.booking.dto.BookingRequest;
 import io.callisto.ticketing.booking.dto.BookingResponse;
+import io.callisto.ticketing.catalog.Event;
 import io.callisto.ticketing.catalog.EventNotFoundException;
 import io.callisto.ticketing.catalog.EventRepository;
-import io.callisto.ticketing.domain.BookingStatus;
-import io.callisto.ticketing.domain.Event;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;

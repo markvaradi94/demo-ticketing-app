@@ -1,6 +1,8 @@
 package io.callisto.ticketing.review;
 
-import io.callisto.ticketing.catalog.EventRepository;
+import io.callisto.ticketing.catalog.EventController;
+import io.callisto.ticketing.catalog.EventNotFoundException;
+import io.callisto.ticketing.catalog.dto.EventResponse;
 import io.callisto.ticketing.review.dto.ReviewRequest;
 import io.callisto.ticketing.review.dto.ReviewSummary;
 import org.junit.jupiter.api.Test;
@@ -11,6 +13,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,9 +27,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Controller-layer test: HTTP contract only — status codes, JSON shape, validation,
- * routing. {@link ReviewRepository} and {@link EventRepository} are both mocked; no
+ * routing. {@link ReviewRepository} and {@link EventController} are both mocked; no
  * database involved. For persistence and the aggregation behavior see
  * {@link ReviewRepositoryTest}.
+ *
+ * <p>{@link EventController} is mocked here purely because that's what
+ * {@code ReviewController} is (deliberately, wrongly) wired to — see the comment on
+ * that field for why this is the session 4 planted Modulith violation, not a pattern
+ * to copy for other controllers.
  */
 @WebMvcTest(ReviewController.class)
 class ReviewControllerTest {
@@ -43,11 +51,11 @@ class ReviewControllerTest {
 	private ReviewRepository reviews;
 
 	@MockitoBean
-	private EventRepository events;
+	private EventController events;
 
 	@Test
 	void createsAReview() throws Exception {
-		when(events.existsById(EVENT_ID)).thenReturn(true);
+		when(events.get(EVENT_ID)).thenReturn(stubEvent());
 		when(reviews.save(any(Review.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
 		mockMvc.perform(post("/events/" + EVENT_ID + "/reviews")
@@ -56,12 +64,13 @@ class ReviewControllerTest {
 				.andExpect(status().isCreated())
 				.andExpect(header().exists("Location"))
 				.andExpect(jsonPath("$.rating").value(5))
-				.andExpect(jsonPath("$.comment").value("Loved it"));
+				.andExpect(jsonPath("$.comment").value("Loved it"))
+				.andExpect(jsonPath("$.eventName").value("Jazz Night"));
 	}
 
 	@Test
 	void rejectsAReviewForAnUnknownEvent() throws Exception {
-		when(events.existsById(999L)).thenReturn(false);
+		when(events.get(999L)).thenThrow(new EventNotFoundException(999L));
 
 		mockMvc.perform(post("/events/999/reviews")
 						.contentType(MediaType.APPLICATION_JSON)
@@ -79,12 +88,14 @@ class ReviewControllerTest {
 
 	@Test
 	void listsReviewsForAnEvent() throws Exception {
+		when(events.get(EVENT_ID)).thenReturn(stubEvent());
 		Review review = Review.builder().id("review-1").eventId(EVENT_ID).rating(4).comment("Good show").build();
 		when(reviews.findByEventId(EVENT_ID)).thenReturn(List.of(review));
 
 		mockMvc.perform(get("/events/" + EVENT_ID + "/reviews"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$[0].rating").value(4));
+				.andExpect(jsonPath("$[0].rating").value(4))
+				.andExpect(jsonPath("$[0].eventName").value("Jazz Night"));
 	}
 
 	@Test
@@ -105,6 +116,10 @@ class ReviewControllerTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.averageRating").value(0.0))
 				.andExpect(jsonPath("$.totalReviews").value(0));
+	}
+
+	private static EventResponse stubEvent() {
+		return new EventResponse(EVENT_ID, "Jazz Night", "Blue Room", 120, Instant.now());
 	}
 
 }

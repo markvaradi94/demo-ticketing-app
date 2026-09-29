@@ -1,4 +1,4 @@
-package io.callisto.ticketing.report;
+package io.callisto.ticketing.booking.report;
 
 import java.math.BigDecimal;
 import java.util.Map;

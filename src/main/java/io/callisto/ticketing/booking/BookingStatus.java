@@ -1,4 +1,4 @@
-package io.callisto.ticketing.domain;
+package io.callisto.ticketing.booking;
 
 public enum BookingStatus {
 	PENDING,

@@ -1,6 +1,5 @@
 package io.callisto.ticketing.catalog;
 
-import io.callisto.ticketing.domain.Event;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 

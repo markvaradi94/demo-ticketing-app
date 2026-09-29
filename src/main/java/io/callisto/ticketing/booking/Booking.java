@@ -1,6 +1,5 @@
 package io.callisto.ticketing.booking;
 
-import io.callisto.ticketing.domain.BookingStatus;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;

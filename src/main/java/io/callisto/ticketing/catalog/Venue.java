@@ -1,4 +1,4 @@
-package io.callisto.ticketing.domain;
+package io.callisto.ticketing.catalog;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;

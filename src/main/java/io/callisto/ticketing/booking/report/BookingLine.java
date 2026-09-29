@@ -1,6 +1,6 @@
-package io.callisto.ticketing.report;
+package io.callisto.ticketing.booking.report;
 
-import io.callisto.ticketing.domain.BookingStatus;
+import io.callisto.ticketing.booking.BookingStatus;
 
 import java.math.BigDecimal;
 

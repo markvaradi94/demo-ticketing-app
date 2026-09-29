@@ -2,8 +2,6 @@ package io.callisto.ticketing.catalog;
 
 import io.callisto.ticketing.catalog.dto.EventRequest;
 import io.callisto.ticketing.catalog.dto.EventResponse;
-import io.callisto.ticketing.domain.Event;
-import io.callisto.ticketing.domain.Venue;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;

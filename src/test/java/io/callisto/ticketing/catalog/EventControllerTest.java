@@ -1,8 +1,6 @@
 package io.callisto.ticketing.catalog;
 
 import io.callisto.ticketing.catalog.dto.EventRequest;
-import io.callisto.ticketing.domain.Event;
-import io.callisto.ticketing.domain.Venue;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;

@@ -1,8 +1,6 @@
 package io.callisto.ticketing.catalog;
 
 import io.callisto.ticketing.AbstractIntegrationTest;
-import io.callisto.ticketing.domain.Event;
-import io.callisto.ticketing.domain.Venue;
 import jakarta.persistence.EntityManagerFactory;
 import org.hibernate.SessionFactory;
 import org.hibernate.stat.Statistics;

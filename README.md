@@ -8,7 +8,7 @@ history is the course.
 
 Two branches per session: `session-NN-start` is what you check out before the
 session begins, `session-NN-end` is the finished state after that session's live
-coding and lab. You are currently on **`session-03-end`**.
+coding and lab. You are currently on **`session-04-start`**.
 
 ## Prerequisites
 
@@ -25,81 +25,58 @@ coding and lab. You are currently on **`session-03-end`**.
 ./gradlew build
 ```
 
-## Where things stand — Session 3: Persistence (end)
+## Where things stand — Session 4: Modulith (start)
 
-Carried over from `session-03-start` unchanged: `io.callisto.ticketing.catalog`'s
-`Event`/`Venue` JPA mapping and auto-generated `Long` ids, `compose/docker-compose.yml`,
-`GlobalExceptionHandler`, profile-based `BookingProperties`.
+Carried over from `session-03-end` unchanged: every endpoint, every entity, every
+test — this session doesn't touch behavior at all. It's purely about how the code
+that already exists is *organized*, and about a new build-time (well, test-time)
+enforcement of that organization.
 
-**Both planted bugs, fixed:**
+**Package reorganization, so `catalog`/`booking`/`review`/`shared` are genuine
+module boundaries, not just two of six:**
 
-- **N+1** — `EventRepository.findAll()` now carries `@EntityGraph(attributePaths =
-  "venue")`, joining `Venue` into the same query instead of one `SELECT` per event.
-  Proven, not just asserted: `EventRepositoryTest.fetchesAllEventsWithTheirVenuesInOneQuery()`
-  reads Hibernate's own statement-count statistics
-  (`spring.jpa.properties.hibernate.generate_statistics=true`) and asserts exactly one
-  query fires for two events.
-- **Lost update** — `Event` now carries `@Version`. Two concurrent
-  `bookedSeats` writes on the same row now race on the version instead of silently
-  overwriting each other; the loser throws `ObjectOptimisticLockingFailureException`,
-  mapped by `GlobalExceptionHandler` to `409 Conflict`. Proven the same way the
-  original bug was: `EventRepositoryTest.rejectsASecondSaveAgainstAStaleVersion()`
-  deliberately breaks out of `@DataJpaTest`'s per-test transaction
-  (`@Transactional(propagation = NOT_SUPPORTED)`) so two `save()` calls genuinely land
-  in separate transactions — inside one shared transaction they'd share one identity
-  map and never race, the same trap the original scratch-test reproduction hit.
-- **A bug `@Version` itself uncovered, also fixed:** adding `@Version` changes how
-  Spring Data decides "is this entity new" — from "is the id null" to "is the version
-  null." `EventController.update()` used to rebuild a brand-new `Event` from scratch
-  on every `PUT`, which left `version` null and made Spring Data treat an *update* as
-  an *insert* on an id that already exists — the request now fails silently (the old
-  value survives). Verified genuine by temporarily reverting the fix and watching
-  `EventJourneyIntegrationTest`'s update assertion fail before reapplying it. Fixed by
-  building off `existing.toBuilder()` (loaded via `findOrThrow`) instead of a fresh
-  `Event.builder()`, carrying `id` *and* `version` forward.
+Before this branch, `io.callisto.ticketing` had *six* top-level packages —
+`catalog`, `booking`, `review`, `web`, `report`, and a `domain` package that cut
+across both `catalog` and `booking`'s actual concerns (`Event`/`Venue` conceptually
+belong to catalog, `BookingStatus`/`RefundPolicy` to booking). Spring Modulith treats
+every direct subpackage of the application's root package as its own module by
+default, so that shape would've meant six modules, not the three or four the course
+actually means. Moved, all via `git mv` to preserve history:
 
-**`Booking` is now persisted — this session's lab, done:**
+- `domain.Event`, `domain.Venue` → `catalog` (root package — catalog's public API)
+- `domain.BookingStatus`, `domain.RefundPolicy` → `booking` (same reasoning)
+- `report.*` (`BookingLine`, `BookingReport`, `BookingReportService`, session 1's
+  standalone demo) → `booking.report` — it was always about bookings, just orphaned
+- `web.GlobalExceptionHandler` → new `shared` package — genuinely cross-cutting,
+  referenced by every other module, so it's the seed of what `shared` becomes
+- `domain.Seat` — deleted. Session 1's third record example, never wired into the
+  real model (bookings use a plain `seatCount`, not individual seats), and "seat
+  maps" are explicitly out of scope for this course. No reason to find it a new home.
 
-- `Booking` is a real `@Entity` (`bookings` table in `schema.sql`); `BookingRepository`
-  is now a bare `JpaRepository<Booking, Long>`, same shape as `EventRepository`.
-  `Booking`'s id is auto-generated too, the same `@GeneratedValue(strategy =
-  IDENTITY)` convention `Event`/`Venue` already established on `session-03-start` —
-  `BookingController` no longer assigns an id itself at all.
-- **`BookingStatus` converted from a sealed interface to an enum** (`PENDING` /
-  `CONFIRMED` / `CANCELLED`), mapped with `@Enumerated(EnumType.STRING)` — a sealed
-  interface of empty records has no natural JPA column mapping, and a plain enum is
-  genuinely the better fit once persistence is real, not just a simplification. This
-  was done as a whole-codebase refactor via Copilot/IDE tooling rather than by hand —
-  the type is used well beyond `booking`: `RefundPolicy`'s exhaustive `switch`
-  (session 1) and `BookingReportService`'s stream filters (session 1's lab) both
-  needed updating too. That ripple is exactly the argument for doing this kind of
-  rename with tooling that finds every usage, not manual find-replace.
+`review` needed no changes — it was already cleanly decoupled (only ever touches
+other modules via a plain `Long eventId`, never an entity reference), which is
+exactly the shape Spring Modulith rewards. It's a fourth module even though the
+course's own shorthand only names three.
 
-**MongoDB-backed reviews, new `io.callisto.ticketing.review`:**
+**Spring Modulith dependency added** (`spring-modulith-starter-core` +
+`spring-modulith-starter-test`, `2.1.1` — the release tracking Spring Boot 4.1.x,
+confirmed resolving cleanly against this project's `4.1.1`). Nothing uses it yet —
+no `ApplicationModules.of(...).verify()` test exists on this branch. Writing that
+test, watching it fail, and understanding *why* is this session's live-coding.
 
-- `Review` is a `@Document`, not a JPA entity — `ReviewRepository extends
-  MongoRepository<Review, String>`. Its id is where this session's id story flips: we
-  assign it ourselves (`UUID.randomUUID()`) instead of leaving it null for MongoDB to
-  generate its own ObjectId-backed string — the more realistic choice for a document
-  a client might reference from outside Mongo. `Review.eventId` is a `Long`, matching
-  `Event`'s real id.
-- `POST /events/{eventId}/reviews` (rejects an unknown event, reusing
-  `EventNotFoundException`), `GET /events/{eventId}/reviews` (list), `GET
-  /events/{eventId}/reviews/summary` (average rating + count).
-- The summary is a `@Aggregation` pipeline declared directly on the repository
-  interface — `$match` by `eventId`, `$group` with `$avg`/`$sum` — mapped straight
-  onto a record (`ReviewSummary`), no imperative aggregation code. Verified against a
-  real Mongo container in `ReviewRepositoryTest`, including the empty-result case
-  (`Optional.empty()` → the controller returns a zeroed summary rather than a 404).
-- `AbstractIntegrationTest` now starts a `MongoDBContainer` alongside the existing
-  `PostgreSQLContainer`, same singleton-shared-across-test-classes pattern.
-
-**One more id-story note, since two different conventions now live side by side:**
-`Event`/`Venue`/`Booking` (Postgres) get a real auto-increment id from the database;
-`Review` (Mongo) gets a UUID we assign ourselves. Both are realistic — which one you'd
-reach for in a real system depends on whether the store offers a good native generator
-and whether the id ever needs to be known before the row exists, not on "relational
-vs. document" as a blanket rule.
+**A boundary violation, planted deliberately** (same discipline as every other
+planted bug in this course — verified to actually compile, run, and pass every
+existing test *before* landing here, since Modulith violations are invisible to the
+compiler and to every test that isn't the modularity test itself): `ReviewController`
+depends on `EventController` directly instead of `EventRepository`, purely to reuse
+its existing not-found check and read the event's name for `ReviewResponse.eventName`.
+It compiles fine and every existing test passes — `EventController.get()`'s return
+type, `EventResponse`, lives in `catalog.dto`, a *nested* package, not catalog's root.
+Spring Modulith's default rule is that only root-package types are a module's public
+API; nested packages are internal. So this is exactly the kind of mistake `verify()`
+exists to catch: it's also a real anti-pattern independent of Modulith entirely
+(controller depending on another controller instead of a repository) — two lessons
+in one deliberately small change. Finding and fixing it is this session's lab.
 
 ## Testing strategy — all four layers, explicitly
 
@@ -153,23 +130,9 @@ on both sides: the integration test now deletes what it created, and the reposit
 test no longer trusts the shared table to contain only its own rows — it filters
 `findAll()`'s result down to the ids it just saved before asserting on it.
 
-## Homework
-
-A standalone exercise, not a change to this repo. Model a small concurrency scenario
-outside the ticketing domain — a warehouse's stock count is a good one: a `Stock`
-entity with a `quantity` and `@Version`, two "concurrent" decrements racing on the
-same row. Write a persistence-layer test that reproduces the race using the same
-technique as `EventRepositoryTest.rejectsASecondSaveAgainstAStaleVersion()`: load the
-same row twice, save the first change, then assert the second `save()` throws
-`ObjectOptimisticLockingFailureException`. Use a plain `@DataJpaTest` with an
-in-memory or Testcontainers database — the point is the two-separate-reads-then-two-
-writes shape, not the specific database.
-
-This reinforces the trickiest thing from this session — that reproducing a
-concurrency bug in a test requires genuinely separate transactions, not just two
-method calls that look concurrent — on a domain simple enough that the concurrency
-logic itself is the only thing you have to think about.
-
-Next up, Session 4: splitting into `catalog`/`booking`/`shared` modules (a Spring
-Modulith), with `verify()` wired into the build and boundary violations planted for
-the lab to find.
+Next up, Session 4's live coding and lab: write an `ApplicationModules.of(...).verify()`
+test, watch it fail against `ReviewController`'s planted dependency on `EventController`,
+and fix it — landing on `session-04-end`. That also sets up session 5 (hexagonal
+architecture inside `booking`) and session 6 (the `EventInventory` DDD aggregate),
+neither of which needs any further Gradle or package-boundary changes — both live
+entirely *inside* the module structure this branch just established.

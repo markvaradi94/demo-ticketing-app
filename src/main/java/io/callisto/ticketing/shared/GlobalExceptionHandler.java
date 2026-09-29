@@ -1,4 +1,4 @@
-package io.callisto.ticketing.web;
+package io.callisto.ticketing.shared;
 
 import io.callisto.ticketing.booking.BookingAlreadyCancelledException;
 import io.callisto.ticketing.booking.BookingNotFoundException;
