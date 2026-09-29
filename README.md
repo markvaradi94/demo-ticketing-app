@@ -64,10 +64,26 @@ confirmed resolving cleanly against this project's `4.1.1`). Nothing uses it yet
 no `ApplicationModules.of(...).verify()` test exists on this branch. Writing that
 test, watching it fail, and understanding *why* is this session's live-coding.
 
+**Controller → service → repository, in `booking` and `review` — a second baseline
+addition, not part of the Modulith lesson itself:** every controller used to call its
+repository (or, for `review`, `EventController`) directly, with DTO construction
+inline. `booking` and `review` now each have a package-private `Service` (business
+rules, works in domain objects) and `Mapper` (pure DTO construction) between their
+controller and repository — `BookingService`/`BookingMapper`,
+`ReviewService`/`ReviewMapper`. `catalog` deliberately does **not** have this yet —
+`EventController` still talks straight to `EventRepository`, exactly like every
+controller did before this branch. That's on purpose: applying the same pattern to
+`catalog` — the simplest of the three, no cross-module dependencies, straightforward
+CRUD — is small enough to live-code in front of students during the session, once
+they've already seen the shape twice (in `booking` and `review`) in the code they
+were handed. Doing this same refactor for all three modules as hands-on lab work
+would blow past this course's own "cap student-written code per lab at ~60 lines"
+rule several times over.
+
 **A boundary violation, planted deliberately** (same discipline as every other
 planted bug in this course — verified to actually compile, run, and pass every
 existing test *before* landing here, since Modulith violations are invisible to the
-compiler and to every test that isn't the modularity test itself): `ReviewController`
+compiler and to every test that isn't the modularity test itself): `ReviewService`
 depends on `EventController` directly instead of `EventRepository`, purely to reuse
 its existing not-found check and read the event's name for `ReviewResponse.eventName`.
 It compiles fine and every existing test passes — `EventController.get()`'s return
@@ -75,8 +91,10 @@ type, `EventResponse`, lives in `catalog.dto`, a *nested* package, not catalog's
 Spring Modulith's default rule is that only root-package types are a module's public
 API; nested packages are internal. So this is exactly the kind of mistake `verify()`
 exists to catch: it's also a real anti-pattern independent of Modulith entirely
-(controller depending on another controller instead of a repository) — two lessons
-in one deliberately small change. Finding and fixing it is this session's lab.
+(a service depending on another module's controller instead of its repository, or a
+purpose-built client) — two lessons in one deliberately small change. Finding and
+fixing it — plus live-coding the same service/mapper split for `catalog` — is this
+session's lab.
 
 ## Testing strategy — all four layers, explicitly
 
@@ -85,8 +103,8 @@ actually verify, using the lightest tool that can genuinely test it.
 
 | Layer | Example | Tool | Database? |
 |---|---|---|---|
-| **Unit** | `RefundPolicyTest`, `BookingReportServiceTest` (session 1) | plain JUnit | no |
-| **Controller** | `EventControllerTest`, `BookingControllerTest`, `ReviewControllerTest` | `@WebMvcTest` + `@MockitoBean` on every repository | no |
+| **Unit** | `RefundPolicyTest`, `BookingReportServiceTest` (session 1), `BookingServiceTest`, `ReviewServiceTest` | plain JUnit, repository mocked by hand | no |
+| **Controller** | `EventControllerTest` (mocks `EventRepository` still), `BookingControllerTest`/`ReviewControllerTest` (mock their service) | `@WebMvcTest` + `@MockitoBean` | no |
 | **Persistence** | `EventRepositoryTest`, `BookingRepositoryTest` | `@DataJpaTest` + `@AutoConfigureTestDatabase(replace = NONE)` | yes — real Postgres |
 | **Persistence (Mongo)** | `ReviewRepositoryTest` | `@DataMongoTest` | yes — real MongoDB |
 | **Integration** | `EventJourneyIntegrationTest`, `BookingJourneyIntegrationTest` | `@SpringBootTest` + real HTTP (`TestRestTemplate`) | yes — real Postgres |
@@ -131,8 +149,9 @@ test no longer trusts the shared table to contain only its own rows — it filte
 `findAll()`'s result down to the ids it just saved before asserting on it.
 
 Next up, Session 4's live coding and lab: write an `ApplicationModules.of(...).verify()`
-test, watch it fail against `ReviewController`'s planted dependency on `EventController`,
-and fix it — landing on `session-04-end`. That also sets up session 5 (hexagonal
-architecture inside `booking`) and session 6 (the `EventInventory` DDD aggregate),
-neither of which needs any further Gradle or package-boundary changes — both live
-entirely *inside* the module structure this branch just established.
+test, watch it fail against `ReviewService`'s planted dependency on `EventController`,
+and fix it; then live-code the same service/mapper split already in `booking` and
+`review` for `catalog` — landing on `session-04-end`. That also sets up session 5
+(hexagonal architecture inside `booking`) and session 6 (the `EventInventory` DDD
+aggregate), neither of which needs any further Gradle or package-boundary changes —
+both live entirely *inside* the module structure this branch just established.

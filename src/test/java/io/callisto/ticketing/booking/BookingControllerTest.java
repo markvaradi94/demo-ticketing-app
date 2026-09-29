@@ -1,9 +1,7 @@
 package io.callisto.ticketing.booking;
 
 import io.callisto.ticketing.booking.dto.BookingRequest;
-import io.callisto.ticketing.catalog.Event;
-import io.callisto.ticketing.catalog.EventRepository;
-import io.callisto.ticketing.catalog.Venue;
+import io.callisto.ticketing.catalog.EventNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -11,9 +9,6 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
-
-import java.time.Instant;
-import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -24,10 +19,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Controller-layer test: HTTP contract only — status codes, JSON shape, validation,
- * routing. {@link BookingRepository}, {@link EventRepository}, and
- * {@link BookingProperties} are all mocked; no database involved. For the full stack
- * see {@link io.callisto.ticketing.BookingJourneyIntegrationTest}.
+ * Controller-layer test: HTTP contract only — status codes, JSON shape, request
+ * validation, routing. {@link BookingService} is mocked, so this deliberately can't
+ * prove any business rule (too-many-seats, cancel-twice, wrong-event scoping) — only
+ * that the controller calls the service and shapes the response correctly. Those
+ * rules are {@link BookingServiceTest}'s job. For the full stack see
+ * {@link io.callisto.ticketing.BookingJourneyIntegrationTest}.
  */
 @WebMvcTest(BookingController.class)
 class BookingControllerTest {
@@ -42,19 +39,12 @@ class BookingControllerTest {
 	private ObjectMapper objectMapper;
 
 	@MockitoBean
-	private BookingRepository bookings;
-
-	@MockitoBean
-	private EventRepository events;
-
-	@MockitoBean
-	private BookingProperties bookingProperties;
+	private BookingService bookings;
 
 	@Test
 	void createsABooking() throws Exception {
-		when(events.findById(EVENT_ID)).thenReturn(Optional.of(stubEvent()));
-		when(bookingProperties.maxSeatsPerBooking()).thenReturn(8);
-		when(bookings.save(any(Booking.class))).thenAnswer(invocation -> invocation.getArgument(0));
+		Booking saved = stubBooking(BookingStatus.CONFIRMED);
+		when(bookings.create(any(Long.class), any(BookingRequest.class))).thenReturn(saved);
 
 		mockMvc.perform(post("/events/" + EVENT_ID + "/bookings")
 						.contentType(MediaType.APPLICATION_JSON)
@@ -67,9 +57,7 @@ class BookingControllerTest {
 
 	@Test
 	void rejectsCancellingAnAlreadyCancelledBooking() throws Exception {
-		Booking cancelled = Booking.builder().id(BOOKING_ID).eventId(EVENT_ID).customerName("Grace Hopper")
-				.seatCount(1).status(BookingStatus.CANCELLED).build();
-		when(bookings.findById(BOOKING_ID)).thenReturn(Optional.of(cancelled));
+		when(bookings.cancel(EVENT_ID, BOOKING_ID)).thenThrow(new BookingAlreadyCancelledException(BOOKING_ID));
 
 		mockMvc.perform(post("/events/" + EVENT_ID + "/bookings/" + BOOKING_ID + "/cancel"))
 				.andExpect(status().isConflict());
@@ -77,9 +65,7 @@ class BookingControllerTest {
 
 	@Test
 	void rejectsFetchingABookingUnderTheWrongEvent() throws Exception {
-		Booking booking = Booking.builder().id(BOOKING_ID).eventId(EVENT_ID).customerName("Hedy Lamarr")
-				.seatCount(1).status(BookingStatus.CONFIRMED).build();
-		when(bookings.findById(BOOKING_ID)).thenReturn(Optional.of(booking));
+		when(bookings.get(999L, BOOKING_ID)).thenThrow(new BookingNotFoundException(BOOKING_ID));
 
 		mockMvc.perform(get("/events/999/bookings/" + BOOKING_ID))
 				.andExpect(status().isNotFound());
@@ -87,7 +73,7 @@ class BookingControllerTest {
 
 	@Test
 	void rejectsBookingAnUnknownEvent() throws Exception {
-		when(events.findById(999L)).thenReturn(Optional.empty());
+		when(bookings.create(any(Long.class), any(BookingRequest.class))).thenThrow(new EventNotFoundException(999L));
 
 		mockMvc.perform(post("/events/999/bookings")
 						.contentType(MediaType.APPLICATION_JSON)
@@ -97,8 +83,8 @@ class BookingControllerTest {
 
 	@Test
 	void rejectsMoreSeatsThanAllowed() throws Exception {
-		when(events.findById(EVENT_ID)).thenReturn(Optional.of(stubEvent()));
-		when(bookingProperties.maxSeatsPerBooking()).thenReturn(8);
+		when(bookings.create(any(Long.class), any(BookingRequest.class)))
+				.thenThrow(new TooManySeatsRequestedException(50, 8));
 
 		mockMvc.perform(post("/events/" + EVENT_ID + "/bookings")
 						.contentType(MediaType.APPLICATION_JSON)
@@ -115,9 +101,9 @@ class BookingControllerTest {
 				.andExpect(jsonPath("$.errors").exists());
 	}
 
-	private static Event stubEvent() {
-		Venue venue = Venue.builder().id(1L).name("Blue Room").capacity(120).build();
-		return Event.builder().id(EVENT_ID).name("Jazz Night").venue(venue).startTime(Instant.now()).bookedSeats(0).build();
+	private static Booking stubBooking(BookingStatus status) {
+		return Booking.builder().id(BOOKING_ID).eventId(EVENT_ID).customerName("Ada Lovelace")
+				.seatCount(2).status(status).build();
 	}
 
 }
