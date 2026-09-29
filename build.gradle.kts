@@ -36,6 +36,7 @@ dependencies {
 	testImplementation(libs.testcontainers.postgresql)
 	testImplementation(libs.testcontainers.mongodb)
 	testImplementation(libs.spring.modulith.starter.test)
+	testImplementation(libs.archunit.junit5)
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

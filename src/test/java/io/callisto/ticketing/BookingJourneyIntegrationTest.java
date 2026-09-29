@@ -1,7 +1,7 @@
 package io.callisto.ticketing;
 
-import io.callisto.ticketing.booking.dto.BookingRequest;
-import io.callisto.ticketing.booking.dto.BookingResponse;
+import io.callisto.ticketing.booking.adapter.in.web.dto.BookingRequest;
+import io.callisto.ticketing.booking.adapter.in.web.dto.BookingResponse;
 import io.callisto.ticketing.catalog.dto.EventRequest;
 import io.callisto.ticketing.catalog.dto.EventResponse;
 import org.junit.jupiter.api.Test;

@@ -1,6 +1,6 @@
-package io.callisto.ticketing.booking.report;
+package io.callisto.ticketing.booking.domain.report;
 
-import io.callisto.ticketing.booking.BookingStatus;
+import io.callisto.ticketing.booking.domain.BookingStatus;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;

@@ -1,6 +1,12 @@
-package io.callisto.ticketing.booking;
+package io.callisto.ticketing.booking.adapter.in.web;
 
-import io.callisto.ticketing.booking.dto.BookingRequest;
+import io.callisto.ticketing.booking.BookingAlreadyCancelledException;
+import io.callisto.ticketing.booking.BookingNotFoundException;
+import io.callisto.ticketing.booking.TooManySeatsRequestedException;
+import io.callisto.ticketing.booking.adapter.in.web.dto.BookingRequest;
+import io.callisto.ticketing.booking.application.BookingService;
+import io.callisto.ticketing.booking.domain.Booking;
+import io.callisto.ticketing.booking.domain.BookingStatus;
 import io.callisto.ticketing.catalog.EventNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,7 +50,7 @@ class BookingControllerTest {
 	@Test
 	void createsABooking() throws Exception {
 		Booking saved = stubBooking(BookingStatus.CONFIRMED);
-		when(bookings.create(any(Long.class), any(BookingRequest.class))).thenReturn(saved);
+		when(bookings.create(any(Booking.class))).thenReturn(saved);
 
 		mockMvc.perform(post("/events/" + EVENT_ID + "/bookings")
 						.contentType(MediaType.APPLICATION_JSON)
@@ -73,7 +79,7 @@ class BookingControllerTest {
 
 	@Test
 	void rejectsBookingAnUnknownEvent() throws Exception {
-		when(bookings.create(any(Long.class), any(BookingRequest.class))).thenThrow(new EventNotFoundException(999L));
+		when(bookings.create(any(Booking.class))).thenThrow(new EventNotFoundException(999L));
 
 		mockMvc.perform(post("/events/999/bookings")
 						.contentType(MediaType.APPLICATION_JSON)
@@ -83,7 +89,7 @@ class BookingControllerTest {
 
 	@Test
 	void rejectsMoreSeatsThanAllowed() throws Exception {
-		when(bookings.create(any(Long.class), any(BookingRequest.class)))
+		when(bookings.create(any(Booking.class)))
 				.thenThrow(new TooManySeatsRequestedException(50, 8));
 
 		mockMvc.perform(post("/events/" + EVENT_ID + "/bookings")

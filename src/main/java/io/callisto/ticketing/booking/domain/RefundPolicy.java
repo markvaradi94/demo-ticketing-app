@@ -1,4 +1,4 @@
-package io.callisto.ticketing.booking;
+package io.callisto.ticketing.booking.domain;
 
 import java.math.BigDecimal;
 

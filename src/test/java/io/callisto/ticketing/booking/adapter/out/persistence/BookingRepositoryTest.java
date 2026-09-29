@@ -1,6 +1,8 @@
-package io.callisto.ticketing.booking;
+package io.callisto.ticketing.booking.adapter.out.persistence;
 
 import io.callisto.ticketing.AbstractIntegrationTest;
+import io.callisto.ticketing.booking.domain.Booking;
+import io.callisto.ticketing.booking.domain.BookingStatus;
 import io.callisto.ticketing.catalog.Event;
 import io.callisto.ticketing.catalog.EventRepository;
 import io.callisto.ticketing.catalog.Venue;

@@ -1,4 +1,4 @@
-package io.callisto.ticketing.booking;
+package io.callisto.ticketing.booking.application;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 

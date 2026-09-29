@@ -1,6 +1,11 @@
-package io.callisto.ticketing.booking;
+package io.callisto.ticketing.booking.application;
 
-import io.callisto.ticketing.booking.dto.BookingRequest;
+import io.callisto.ticketing.booking.BookingAlreadyCancelledException;
+import io.callisto.ticketing.booking.BookingNotFoundException;
+import io.callisto.ticketing.booking.TooManySeatsRequestedException;
+import io.callisto.ticketing.booking.adapter.out.persistence.BookingRepository;
+import io.callisto.ticketing.booking.domain.Booking;
+import io.callisto.ticketing.booking.domain.BookingStatus;
 import io.callisto.ticketing.catalog.Event;
 import io.callisto.ticketing.catalog.EventNotFoundException;
 import io.callisto.ticketing.catalog.EventRepository;
@@ -21,9 +26,12 @@ import static org.mockito.Mockito.when;
  * Unit test: {@link BookingService}'s business rules — too-many-seats,
  * cancel-twice, wrong-event scoping, and the {@code bookedSeats} increment — with
  * {@link BookingRepository}, {@link EventRepository}, and {@link BookingProperties}
- * all mocked, no Spring context or database. For the HTTP contract see
- * {@link BookingControllerTest}; for proof the increment genuinely survives a race
- * against real Postgres, see
+ * all mocked, no Spring context or database. {@link BookingService#create} takes an
+ * already-built {@link Booking}, not a request DTO — the adapter owns that mapping now,
+ * so this test builds the domain object directly the same way the controller's mapper
+ * does. For the HTTP contract see
+ * {@link io.callisto.ticketing.booking.adapter.in.web.BookingControllerTest}; for proof
+ * the increment genuinely survives a race against real Postgres, see
  * {@code EventRepositoryTest.rejectsASecondSaveAgainstAStaleVersion()}.
  */
 class BookingServiceTest {
@@ -41,7 +49,7 @@ class BookingServiceTest {
 		when(bookingProperties.maxSeatsPerBooking()).thenReturn(8);
 		when(bookings.save(any(Booking.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-		Booking created = service.create(EVENT_ID, new BookingRequest("Ada Lovelace", 2));
+		Booking created = service.create(unsavedBooking(EVENT_ID, "Ada Lovelace", 2));
 
 		assertThat(created.getSeatCount()).isEqualTo(2);
 		assertThat(created.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
@@ -53,7 +61,7 @@ class BookingServiceTest {
 		when(events.findById(EVENT_ID)).thenReturn(Optional.of(stubEvent(0)));
 		when(bookingProperties.maxSeatsPerBooking()).thenReturn(8);
 
-		assertThatThrownBy(() -> service.create(EVENT_ID, new BookingRequest("Margaret Hamilton", 50)))
+		assertThatThrownBy(() -> service.create(unsavedBooking(EVENT_ID, "Margaret Hamilton", 50)))
 				.isInstanceOf(TooManySeatsRequestedException.class);
 	}
 
@@ -61,7 +69,7 @@ class BookingServiceTest {
 	void rejectsBookingAnUnknownEvent() {
 		when(events.findById(999L)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> service.create(999L, new BookingRequest("Alan Turing", 1)))
+		assertThatThrownBy(() -> service.create(unsavedBooking(999L, "Alan Turing", 1)))
 				.isInstanceOf(EventNotFoundException.class);
 	}
 
@@ -93,6 +101,11 @@ class BookingServiceTest {
 		when(bookings.findById(1L)).thenReturn(Optional.of(cancelled));
 
 		assertThatThrownBy(() -> service.cancel(EVENT_ID, 1L)).isInstanceOf(BookingAlreadyCancelledException.class);
+	}
+
+	private static Booking unsavedBooking(Long eventId, String customerName, int seatCount) {
+		return Booking.builder().eventId(eventId).customerName(customerName)
+				.seatCount(seatCount).status(BookingStatus.CONFIRMED).build();
 	}
 
 	private static Event stubEvent(int bookedSeats) {

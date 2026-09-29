@@ -1,9 +1,13 @@
-package io.callisto.ticketing.booking;
+package io.callisto.ticketing.booking.adapter.in.web;
 
-import io.callisto.ticketing.booking.dto.BookingRequest;
-import io.callisto.ticketing.booking.dto.BookingResponse;
+import io.callisto.ticketing.booking.adapter.in.web.dto.BookingRequest;
+import io.callisto.ticketing.booking.adapter.in.web.dto.BookingResponse;
+import io.callisto.ticketing.booking.domain.Booking;
+import io.callisto.ticketing.booking.domain.BookingStatus;
 
-// Package-private — internal to this module's own controller and service.
+// Package-private — internal to this adapter's own controller. Owns both directions
+// of DTO <-> domain mapping so BookingRequest/BookingResponse never cross into
+// application — BookingService only ever sees a Booking.
 final class BookingMapper {
 
 	private BookingMapper() {

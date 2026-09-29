@@ -1,7 +1,9 @@
-package io.callisto.ticketing.booking;
+package io.callisto.ticketing.booking.adapter.in.web;
 
-import io.callisto.ticketing.booking.dto.BookingRequest;
-import io.callisto.ticketing.booking.dto.BookingResponse;
+import io.callisto.ticketing.booking.adapter.in.web.dto.BookingRequest;
+import io.callisto.ticketing.booking.adapter.in.web.dto.BookingResponse;
+import io.callisto.ticketing.booking.application.BookingService;
+import io.callisto.ticketing.booking.domain.Booking;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -23,7 +25,7 @@ public class BookingController {
 
 	@PostMapping
 	public ResponseEntity<BookingResponse> create(@PathVariable Long eventId, @Valid @RequestBody BookingRequest request) {
-		Booking saved = bookings.create(eventId, request);
+		Booking saved = bookings.create(BookingMapper.toNewBooking(eventId, request));
 		URI location = URI.create("/events/" + eventId + "/bookings/" + saved.getId());
 		return ResponseEntity.created(location).body(BookingMapper.toResponse(saved));
 	}
