@@ -8,7 +8,7 @@ history is the course.
 
 Two branches per session: `session-NN-start` is what you check out before the
 session begins, `session-NN-end` is the finished state after that session's live
-coding and lab. You are currently on **`session-04-start`**.
+coding and lab. You are currently on **`session-04-end`**.
 
 ## Prerequisites
 
@@ -25,12 +25,12 @@ coding and lab. You are currently on **`session-04-start`**.
 ./gradlew build
 ```
 
-## Where things stand — Session 4: Modulith (start)
+## Where things stand — Session 4: Modulith (end)
 
 Carried over from `session-03-end` unchanged: every endpoint, every entity, every
-test — this session doesn't touch behavior at all. It's purely about how the code
-that already exists is *organized*, and about a new build-time (well, test-time)
-enforcement of that organization.
+test's actual behavior — this whole session doesn't touch runtime behavior at all.
+It's purely about how the code that already exists is *organized*, and about a new
+test-time enforcement of that organization.
 
 **Package reorganization, so `catalog`/`booking`/`review`/`shared` are genuine
 module boundaries, not just two of six:**
@@ -58,43 +58,75 @@ other modules via a plain `Long eventId`, never an entity reference), which is
 exactly the shape Spring Modulith rewards. It's a fourth module even though the
 course's own shorthand only names three.
 
-**Spring Modulith dependency added** (`spring-modulith-starter-core` +
+**Spring Modulith dependency** (`spring-modulith-starter-core` +
 `spring-modulith-starter-test`, `2.1.1` — the release tracking Spring Boot 4.1.x,
-confirmed resolving cleanly against this project's `4.1.1`). Nothing uses it yet —
-no `ApplicationModules.of(...).verify()` test exists on this branch. Writing that
-test, watching it fail, and understanding *why* is this session's live-coding.
+confirmed resolving cleanly against this project's `4.1.1`) — carried over from
+`session-04-start`, unused there.
 
-**Controller → service → repository, in `booking` and `review` — a second baseline
-addition, not part of the Modulith lesson itself:** every controller used to call its
-repository (or, for `review`, `EventController`) directly, with DTO construction
-inline. `booking` and `review` now each have a package-private `Service` (business
-rules, works in domain objects) and `Mapper` (pure DTO construction) between their
-controller and repository — `BookingService`/`BookingMapper`,
-`ReviewService`/`ReviewMapper`. `catalog` deliberately does **not** have this yet —
-`EventController` still talks straight to `EventRepository`, exactly like every
-controller did before this branch. That's on purpose: applying the same pattern to
-`catalog` — the simplest of the three, no cross-module dependencies, straightforward
-CRUD — is small enough to live-code in front of students during the session, once
-they've already seen the shape twice (in `booking` and `review`) in the code they
-were handed. Doing this same refactor for all three modules as hands-on lab work
-would blow past this course's own "cap student-written code per lab at ~60 lines"
-rule several times over.
+**Controller → service → repository, in `booking` and `review`, carried over from
+`session-04-start` unchanged** — every controller used to call its repository (or,
+for `review`, `EventController`) directly, with DTO construction inline. `booking`
+and `review` each have a package-private `Service` (business rules, works in domain
+objects) and `Mapper` (pure DTO construction) between their controller and
+repository. See `session-04-start`'s README for the full reasoning on why this
+landed as baseline rather than lab work.
 
-**A boundary violation, planted deliberately** (same discipline as every other
-planted bug in this course — verified to actually compile, run, and pass every
-existing test *before* landing here, since Modulith violations are invisible to the
-compiler and to every test that isn't the modularity test itself): `ReviewService`
-depends on `EventController` directly instead of `EventRepository`, purely to reuse
-its existing not-found check and read the event's name for `ReviewResponse.eventName`.
-It compiles fine and every existing test passes — `EventController.get()`'s return
-type, `EventResponse`, lives in `catalog.dto`, a *nested* package, not catalog's root.
-Spring Modulith's default rule is that only root-package types are a module's public
-API; nested packages are internal. So this is exactly the kind of mistake `verify()`
-exists to catch: it's also a real anti-pattern independent of Modulith entirely
-(a service depending on another module's controller instead of its repository, or a
-purpose-built client) — two lessons in one deliberately small change. Finding and
-fixing it — plus live-coding the same service/mapper split for `catalog` — is this
-session's lab.
+**`ModularityTests` — this session's actual new code, and it's five lines of
+substance:**
+
+```java
+ApplicationModules modules = ApplicationModules.of(TicketingApplication.class);
+
+@Test
+void verifiesModularStructure() {
+    modules.verify();
+}
+```
+
+That's the whole test. It's pure static analysis over the compiled classes (ArchUnit
+under the hood) — no Spring context, no database, fast enough to run on every build.
+And because it's a plain JUnit test sitting in `src/test/java`, it's automatically
+part of `./gradlew check` the moment it exists — "wiring `verify()` into the build"
+needed no Gradle configuration at all, just writing the test.
+
+**Run against `session-04-start`'s planted violation, it fails with a genuinely
+precise message** — not a generic "something's wrong," the exact call sites, now
+inside the service layer that landed on `session-04-start`:
+
+```
+Module 'review' depends on non-exposed type io.callisto.ticketing.catalog.dto.EventResponse within module 'catalog'!
+Method <io.callisto.ticketing.review.ReviewService.create(...)> calls method <io.callisto.ticketing.catalog.dto.EventResponse.name()> in (ReviewService.java:35)
+Module 'review' depends on non-exposed type io.callisto.ticketing.catalog.dto.EventResponse within module 'catalog'!
+Method <io.callisto.ticketing.review.ReviewService.list(...)> calls method <...> in (ReviewService.java:41)
+```
+
+**The fix — not just "swap the dependency," a narrow module-API bean:** the obvious
+patch is `ReviewService` depending on `EventRepository` instead of `EventController`
+— that *would* satisfy `verify()`, since `EventRepository` sits at catalog's root.
+But it hands `review` the entire repository — save, delete, findAll, everything —
+for what's actually one read. `EventClient`, new in `catalog`, is the real fix: a
+narrow, purpose-built bean exposing exactly `nameOf(Long)`, shaped the way a real
+client call would look if catalog were ever a separate service (it isn't, in this
+course — the discipline holds regardless). `ReviewService` depends on that instead.
+`BookingService` still reaches `EventRepository` directly — it needs to *read and
+mutate* `bookedSeats`, a deeper coupling than a lookup, and that one belongs to
+session 6's DDD work (the `EventInventory` aggregate owning the no-overbooking
+invariant), not something to paper over here with a wider client API than `review`
+actually needs today. `EventClient` itself gets a small unit test (`EventClientTest`,
+mocked `EventRepository`, no Spring context) since it's new logic, not just a
+pass-through. Re-run `ModularityTests` after the fix: green, no other violations
+anywhere in the codebase.
+
+**Then, the live-coding half of the lab: the same `Service`/`Mapper` split, applied
+to `catalog`.** `EventService`/`EventMapper` are new this branch — `EventController`
+is now as thin as `BookingController`/`ReviewController` already were on
+`session-04-start`. Every business rule that used to live in `EventController` moved
+to `EventService`: not-found handling, and the `@Version`-preserving `toBuilder()`
+update from session 3. `EventControllerTest` shrank to HTTP-shape-only, matching
+`BookingControllerTest`/`ReviewControllerTest`'s shape; `EventServiceTest` is new,
+covering the rules that moved out — including the update-preserves-version behavior,
+now provable at the unit level in addition to the existing integration-level proof
+(`EventRepositoryTest`, `EventJourneyIntegrationTest`).
 
 ## Testing strategy — all four layers, explicitly
 
@@ -103,17 +135,22 @@ actually verify, using the lightest tool that can genuinely test it.
 
 | Layer | Example | Tool | Database? |
 |---|---|---|---|
-| **Unit** | `RefundPolicyTest`, `BookingReportServiceTest` (session 1), `BookingServiceTest`, `ReviewServiceTest` | plain JUnit, repository mocked by hand | no |
-| **Controller** | `EventControllerTest` (mocks `EventRepository` still), `BookingControllerTest`/`ReviewControllerTest` (mock their service) | `@WebMvcTest` + `@MockitoBean` | no |
+| **Unit** | `RefundPolicyTest`, `BookingReportServiceTest` (session 1), `EventClientTest`, `EventServiceTest`, `BookingServiceTest`, `ReviewServiceTest` | plain JUnit, repository mocked by hand | no |
+| **Controller** | `EventControllerTest`, `BookingControllerTest`, `ReviewControllerTest` | `@WebMvcTest` + `@MockitoBean` on the service | no |
 | **Persistence** | `EventRepositoryTest`, `BookingRepositoryTest` | `@DataJpaTest` + `@AutoConfigureTestDatabase(replace = NONE)` | yes — real Postgres |
 | **Persistence (Mongo)** | `ReviewRepositoryTest` | `@DataMongoTest` | yes — real MongoDB |
 | **Integration** | `EventJourneyIntegrationTest`, `BookingJourneyIntegrationTest` | `@SpringBootTest` + real HTTP (`TestRestTemplate`) | yes — real Postgres |
 
-A sixth, narrower shape: `BookingPropertiesProfileTest` tests `SpringApplication`'s
-own profile-file-loading behavior, so it needs real bootstrap machinery — but not the
-whole app. `@SpringBootTest(classes = MinimalConfig.class)` gets real profile loading
-without pulling in JPA/web/Mongo (`ApplicationContextRunner` would skip profile-file
-loading entirely, which is the one thing this test needs to verify).
+Two narrower shapes beyond that table: `BookingPropertiesProfileTest` tests
+`SpringApplication`'s own profile-file-loading behavior, so it needs real bootstrap
+machinery — but not the whole app. `@SpringBootTest(classes = MinimalConfig.class)`
+gets real profile loading without pulling in JPA/web/Mongo (`ApplicationContextRunner`
+would skip profile-file loading entirely, which is the one thing this test needs to
+verify). And `ModularityTests` — architecture, not behavior: no Spring context at
+all, just `ApplicationModules.of(...).verify()` doing static analysis over the
+compiled classes. It doesn't fit unit/controller/persistence/integration because it
+isn't testing what the code *does*, it's testing how the code is *shaped* — a
+genuinely different category, not a smaller version of the others.
 
 `AbstractIntegrationTest` provides both databases: **one Postgres container and one
 Mongo container, each started once, shared across every test class that needs them**
@@ -148,10 +185,25 @@ on both sides: the integration test now deletes what it created, and the reposit
 test no longer trusts the shared table to contain only its own rows — it filters
 `findAll()`'s result down to the ids it just saved before asserting on it.
 
-Next up, Session 4's live coding and lab: write an `ApplicationModules.of(...).verify()`
-test, watch it fail against `ReviewService`'s planted dependency on `EventController`,
-and fix it; then live-code the same service/mapper split already in `booking` and
-`review` for `catalog` — landing on `session-04-end`. That also sets up session 5
-(hexagonal architecture inside `booking`) and session 6 (the `EventInventory` DDD
-aggregate), neither of which needs any further Gradle or package-boundary changes —
-both live entirely *inside* the module structure this branch just established.
+## Homework
+
+A standalone exercise, not a change to this repo. Take any small project of your
+own (or a fresh one — a few packages is enough) and add Spring Modulith the same way
+this session did: `spring-modulith-starter-core` + `spring-modulith-starter-test`, a
+`ModularityTests` class with `ApplicationModules.of(YourApplication.class).verify()`.
+Confirm it passes on your current structure, then deliberately introduce one
+violation — reach into another package's non-root class from a class in a different
+top-level package — and watch `verify()`'s failure message name the exact call site.
+Then fix it and confirm it's green again.
+
+This reinforces the core mechanic from this session on unfamiliar code: architecture
+rules that live in a test not only *state* an intention (a doc comment or a README
+section can do that) but *catch* the moment someone violates it, with a message
+precise enough to fix from — same as watching `ReviewService`'s violation get named
+down to the line number here.
+
+Next up, Session 5: hexagonal architecture inside `booking` —
+`domain`/`application`/`adapter` layering, with ArchUnit rules wired into `check` the
+same way `ModularityTests` just was. No further Gradle or top-level package-boundary
+changes needed; this is all refinement *inside* the module structure this session
+established.

@@ -22,54 +22,33 @@ import java.util.List;
 @RequiredArgsConstructor
 public class EventController {
 
-	private final EventRepository events;
+	private final EventService events;
 
 	@PostMapping
 	public ResponseEntity<EventResponse> create(@Valid @RequestBody EventRequest request) {
-		Event event = events.save(toNewEvent(request));
-		return ResponseEntity.created(URI.create("/events/" + event.getId())).body(toResponse(event));
+		Event event = events.create(request);
+		return ResponseEntity.created(URI.create("/events/" + event.getId())).body(EventMapper.toResponse(event));
 	}
 
 	@GetMapping
 	public List<EventResponse> list() {
-		return events.findAll().stream().map(EventController::toResponse).toList();
+		return events.list().stream().map(EventMapper::toResponse).toList();
 	}
 
 	@GetMapping("/{id}")
 	public EventResponse get(@PathVariable Long id) {
-		return toResponse(findOrThrow(id));
+		return EventMapper.toResponse(events.get(id));
 	}
 
 	@PutMapping("/{id}")
 	public EventResponse update(@PathVariable Long id, @Valid @RequestBody EventRequest request) {
-		Event existing = findOrThrow(id);
-		Venue venue = Venue.builder().name(request.venueName()).capacity(request.venueCapacity()).build();
-		// toBuilder() off the loaded entity, not a fresh builder() — carries over id
-		// *and* version. Rebuilding from scratch left version null, which Spring Data
-		// reads as "this is a new entity" once Event has an @Version field, and
-		// persist() on an id that already exists blows up instead of updating it.
-		Event updated = existing.toBuilder().name(request.name()).venue(venue).startTime(request.startTime()).build();
-		return toResponse(events.save(updated));
+		return EventMapper.toResponse(events.update(id, request));
 	}
 
 	@DeleteMapping("/{id}")
 	public ResponseEntity<Void> delete(@PathVariable Long id) {
-		findOrThrow(id);
-		events.deleteById(id);
+		events.delete(id);
 		return ResponseEntity.noContent().build();
-	}
-
-	private Event findOrThrow(Long id) {
-		return events.findById(id).orElseThrow(() -> new EventNotFoundException(id));
-	}
-
-	private static Event toNewEvent(EventRequest request) {
-		Venue venue = Venue.builder().name(request.venueName()).capacity(request.venueCapacity()).build();
-		return Event.builder().name(request.name()).venue(venue).startTime(request.startTime()).build();
-	}
-
-	private static EventResponse toResponse(Event event) {
-		return new EventResponse(event.getId(), event.getName(), event.getVenue().getName(), event.getVenue().getCapacity(), event.getStartTime());
 	}
 
 }

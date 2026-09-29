@@ -1,7 +1,6 @@
 package io.callisto.ticketing.review;
 
-import io.callisto.ticketing.catalog.EventController;
-import io.callisto.ticketing.catalog.dto.EventResponse;
+import io.callisto.ticketing.catalog.EventClient;
 import io.callisto.ticketing.review.dto.ReviewRequest;
 import io.callisto.ticketing.review.dto.ReviewResponse;
 import io.callisto.ticketing.review.dto.ReviewSummary;
@@ -12,33 +11,35 @@ import java.util.List;
 
 // Package-private — ReviewController is the only caller within this module.
 //
-// PLANTED MODULITH VIOLATION (session 4's lab task to find and fix) — this calls
-// catalog's own controller directly, purely to reuse its existing not-found check
-// and reach the event's name, instead of going through EventRepository/a proper
-// module-facing API the way BookingService does. It compiles and runs fine; it's
-// Spring Modulith's verify() that catches it, because EventController.get()'s return
-// type, EventResponse, lives in catalog.dto — a nested package, not catalog's root —
-// so it's catalog-internal, not catalog's public API. Controller-to-controller
-// coupling like this is also a real-world smell on its own, independent of Modulith:
-// reach for another module's repository (or a purpose-built client), not its
-// controller.
+// Returns ReviewResponse directly for create()/list(), not Review — the one
+// deliberate exception to "service returns domain objects, controller maps them"
+// (see EventService/BookingService). Both operations need the event's name from
+// EventClient for validation (does the event exist at all) *and* for the response
+// shape, and EventClient is meant to behave like a real remote call — calling it
+// once per operation and reusing the result, rather than twice (once here, once in
+// the controller), is the point.
 @Service
 @RequiredArgsConstructor
 class ReviewService {
 
 	private final ReviewRepository reviews;
-	private final EventController events;
+	// Not EventRepository, and not EventController — EventClient is catalog's
+	// purpose-built API for exactly this: a narrow, read-only lookup, shaped the way
+	// a real client call would be. See EventClient's own comment for why. This is
+	// the fix for session 4's planted Modulith violation — this class used to depend
+	// on EventController and reach for EventResponse, a catalog-internal type.
+	private final EventClient events;
 
 	ReviewResponse create(Long eventId, ReviewRequest request) {
-		EventResponse event = events.get(eventId); // throws EventNotFoundException if missing
+		String eventName = events.nameOf(eventId); // throws EventNotFoundException if missing
 		Review saved = reviews.save(ReviewMapper.toNewReview(eventId, request));
-		return ReviewMapper.toResponse(saved, event.name());
+		return ReviewMapper.toResponse(saved, eventName);
 	}
 
 	List<ReviewResponse> list(Long eventId) {
-		EventResponse event = events.get(eventId);
+		String eventName = events.nameOf(eventId);
 		return reviews.findByEventId(eventId).stream()
-				.map(review -> ReviewMapper.toResponse(review, event.name()))
+				.map(review -> ReviewMapper.toResponse(review, eventName))
 				.toList();
 	}
 
