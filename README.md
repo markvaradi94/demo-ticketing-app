@@ -8,7 +8,7 @@ history is the course.
 
 Two branches per session: `session-NN-start` is what you check out before the
 session begins, `session-NN-end` is the finished state after that session's live
-coding and lab. You are currently on **`session-05-end`**.
+coding and lab. You are currently on **`session-06-start`**.
 
 ## Prerequisites
 
@@ -25,91 +25,55 @@ coding and lab. You are currently on **`session-05-end`**.
 ./gradlew build
 ```
 
-## Where things stand — Session 5: Hexagonal architecture (end)
+## Where things stand — Session 6: DDD (start)
 
-Carried over from `session-04-end` unchanged: `catalog`, `review`, and `shared` —
-this session is entirely inside `booking`, and runtime behavior still doesn't
-change. Baseline from `session-05-start`: `booking` already split into
-`domain`/`application`/`adapter`, with one deliberate gap — `BookingService` still
-depended directly on `BookingRepository` (adapter-layer) and `catalog.EventRepository`,
-no ports. See `session-05-start`'s README for the full reasoning on why the three
-domain exceptions stay at `booking`'s root rather than inside `domain/`, and why
-`BookingService.create` takes a `Booking`, not a `BookingRequest`.
+Unlike sessions 4 and 5, this branch needed almost no prep work. It's
+`session-05-end` unchanged, plus three baseline value objects — because the actual
+gap this session addresses was already sitting in `session-05-end`'s code, untouched,
+never tested for:
 
-**`BookingArchitectureTests` — an ArchUnit `layeredArchitecture()` rule, the
-finer-grained sibling to session 4's `ModularityTests`:**
+**`EventAvailabilityAdapter.reserveSeats` never checks capacity — overbooking is
+possible today, no concurrency required.** It reads `Event`, adds `seatCount` to
+`bookedSeats`, saves. Nothing compares the result against `venue.capacity`. Session
+3's `@Version` work only stops two concurrent writes from silently clobbering each
+other — it was never a capacity check, and nothing else in this codebase is one
+either. A single, sequential booking past capacity just succeeds. Reproducing this
+for real (not just reasoning about it) is where today's session starts.
 
-```java
-@AnalyzeClasses(packages = "io.callisto.ticketing.booking", importOptions = ImportOption.DoNotIncludeTests.class)
-class BookingArchitectureTests {
+**Second gap, same shape:** `BookingService.cancel()` flips `Booking.status` to
+`CANCELLED` but never releases the seats it held — `bookedSeats` only ever goes up.
+Both gaps stay exactly as they are on this branch; neither is today's baseline work,
+both are today's actual lesson.
 
-    @ArchTest
-    static final ArchRule respectsHexagonalLayering = Architectures.layeredArchitecture()
-            .consideringOnlyDependenciesInLayers()
-            .layer("Domain").definedBy("io.callisto.ticketing.booking.domain..")
-            .layer("Application").definedBy("io.callisto.ticketing.booking.application..")
-            .layer("Adapter").definedBy("io.callisto.ticketing.booking.adapter..")
-            .whereLayer("Domain").mayOnlyBeAccessedByLayers("Application", "Adapter")
-            .whereLayer("Application").mayOnlyBeAccessedByLayers("Adapter")
-            .whereLayer("Adapter").mayNotBeAccessedByAnyLayer();
+**Baseline additions — three value objects in `booking.domain`, wired through
+existing signatures, no new behavior:**
 
-}
-```
+- `SeatCount` — wraps the `int` used at `EventAvailabilityPort`'s boundary.
+  `EventAvailabilityPort.reserveSeats(Long eventId, SeatCount seatCount)`; the port's
+  adapter converts back to `int` for the (still-buggy) arithmetic. `Booking.seatCount`
+  itself stays a plain `int` — it's a JPA-mapped entity field, and wrapping it would
+  mean an `@Embeddable` conversion that has nothing to do with today's actual lesson.
+- `Money` — wraps `RefundPolicy`'s `BigDecimal` parameter and return type.
+  `Booking` has no price/paid-amount field to give `Money` a more natural home yet
+  (that's session 7's payment concern, not this one), so it's scoped to where a real
+  consumer already exists.
+- `BookingId` — wraps `Long` only at `BookingRepositoryPort`/`BookingService`'s
+  method signatures (`findById`, `get`, `cancel`). `Booking.id` stays a plain
+  `Long` `@Id` — this is an identifier value object at the application boundary, not
+  a persistence-layer replacement, so it never touches JPA's own id mapping.
+  `BookingController` constructs `BookingId.of(bookingId)` from the raw
+  `@PathVariable Long` when calling the service.
 
-`@AnalyzeClasses` + `@ArchTest` is ArchUnit's own JUnit 5 integration — the reason
-`archunit-junit5` specifically was added, not just `archunit`. `DoNotIncludeTests`
-scopes the check to production code only; test classes legitimately reach into
-internals to mock things, and that's not what this rule is about.
-`consideringOnlyDependenciesInLayers()` restricts the analysis to dependencies
-*between* the three defined layers, so `catalog`, `shared`, and code outside
-`booking` entirely don't trip it.
+All three are records — value objects, not entities, same convention as every DTO in
+this codebase (`Booking`/`Event`/`Venue` stay Lombok classes with identity-based
+`equals`/`hashCode` precisely because they aren't this). Each has a small dedicated
+test (`SeatCountTest`, `MoneyTest`, `BookingIdTest`) proving its validation actually
+rejects bad input — real logic, same reasoning as `EventClientTest`/
+`EventAvailabilityAdapterTest` before it.
 
-**Run against `session-05-start`'s gap, it fails — five real violations, all naming
-the same class:**
-
-```
-Architecture Violation [Priority: MEDIUM] - Rule 'Layered architecture ... where layer 'Adapter' may not be accessed by any layer' was violated (5 times):
-Constructor <BookingService.<init>(BookingRepository, EventRepository, BookingProperties)> has parameter of type <...adapter.out.persistence.BookingRepository> in (BookingService.java:0)
-Field <BookingService.bookings> has type <...adapter.out.persistence.BookingRepository> in (BookingService.java:0)
-Method <BookingService.cancel(Long, Long)> calls method <BookingRepository.save(Object)> in (BookingService.java:54)
-Method <BookingService.create(Booking)> calls method <BookingRepository.save(Object)> in (BookingService.java:42)
-Method <BookingService.findOrThrow(Long, Long)> calls method <BookingRepository.findById(Object)> in (BookingService.java:58)
-```
-
-Confirmed by actually running the rule against the unfixed code before writing any
-fix — same discipline as every planted violation this course has used.
-
-**The fix — two outbound ports, `BookingService` depends on neither adapter
-directly:**
-
-- `BookingRepositoryPort` (`save`, `findById`) — implemented by
-  `BookingRepositoryAdapter`, a package-private wrapper around the (also now
-  package-private) Spring Data `BookingRepository`.
-- `EventAvailabilityPort` — one method, `reserveSeats(Long eventId, int seatCount)`,
-  shaped around the one capability `booking` actually needs from `catalog`, the same
-  "narrow, purpose-built" reasoning behind session 4's `EventClient`. Implemented by
-  `EventAvailabilityAdapter`, which still reaches `catalog.EventRepository` directly
-  to read-then-save the incremented `bookedSeats` — same coupling as before, now
-  behind a port. Session 6's `EventInventory` aggregate replaces just this one
-  adapter class; `EventAvailabilityPort` and `BookingService` don't change at all
-  when that happens — the concrete payoff for putting a port here today.
-
-Neither adapter needs to be `public` — only the port interface does. Spring
-instantiates and injects a package-private class by its declared interface type via
-reflection regardless of visibility, so this is the same "compiler enforces it, not
-just convention" trick session 4 used for `Service`/`Mapper` classes, now applied to
-adapters two packages deeper.
-
-**One behavior-shaped consequence worth calling out:** `BookingService.create` now
-checks the too-many-seats rule *before* calling `EventAvailabilityPort` at all — that
-rule doesn't need catalog, so there's no reason to reach through the port just to
-fail a check that's entirely `booking`'s own. `BookingServiceTest` proves this
-directly (`rejectsMoreSeatsThanAllowedWithoutEverCallingThePort` asserts
-`events.reserveSeats(...)` is never invoked), not just that the exception gets thrown.
-
-**Re-run `BookingArchitectureTests` after the fix: green.** Re-run `ModularityTests`
-too — still green, untouched by any of this, since everything moved stayed inside
-`booking`'s own package tree.
+`BookingArchitectureTests` and `ModularityTests` both still pass — none of this
+touched a package boundary, only method signatures inside layers that were already
+allowed to talk to each other.
 
 ## Testing strategy — all four layers, explicitly
 
@@ -118,7 +82,7 @@ actually verify, using the lightest tool that can genuinely test it.
 
 | Layer | Example | Tool | Database? |
 |---|---|---|---|
-| **Unit** | `RefundPolicyTest`, `BookingReportServiceTest` (session 1), `EventClientTest`, `EventServiceTest`, `BookingServiceTest`, `EventAvailabilityAdapterTest`, `ReviewServiceTest` | plain JUnit, repository/port mocked by hand | no |
+| **Unit** | `RefundPolicyTest`, `BookingReportServiceTest` (session 1), `SeatCountTest`, `MoneyTest`, `BookingIdTest`, `EventClientTest`, `EventServiceTest`, `BookingServiceTest`, `EventAvailabilityAdapterTest`, `ReviewServiceTest` | plain JUnit, repository/port mocked by hand | no |
 | **Controller** | `EventControllerTest`, `BookingControllerTest`, `ReviewControllerTest` | `@WebMvcTest` + `@MockitoBean` on the service | no |
 | **Persistence** | `EventRepositoryTest`, `BookingRepositoryTest` | `@DataJpaTest` + `@AutoConfigureTestDatabase(replace = NONE)` | yes — real Postgres |
 | **Persistence (Mongo)** | `ReviewRepositoryTest` | `@DataMongoTest` | yes — real MongoDB |
@@ -177,28 +141,4 @@ on both sides: the integration test now deletes what it created, and the reposit
 test no longer trusts the shared table to contain only its own rows — it filters
 `findAll()`'s result down to the ids it just saved before asserting on it.
 
-## Homework
-
-A standalone exercise, not a change to this repo. Take any small project with at
-least one non-trivial outbound dependency (a repository, an HTTP call to another
-service, a file write — anything a use case reads from or writes to) and add
-ArchUnit the way this session did: `archunit-junit5`, a `@AnalyzeClasses` test class
-with a `layeredArchitecture()` rule defining your own layers. Confirm it passes on
-your current structure, then deliberately have your application/use-case layer call
-the concrete outbound dependency directly instead of through an interface, and watch
-`mayNotBeAccessedByAnyLayer()` name the exact constructor parameter, field, and
-method calls responsible. Then introduce the port interface, fix it, confirm green
-again.
-
-Same mechanic as watching `BookingService`'s five violations get named down to the
-exact line here — the point is practicing "define the rule, watch it catch the real
-thing, fix it" on unfamiliar code, one layer more granular than session 4's
-module-level version of the same exercise.
-
-Next up, Session 6: DDD — `EventInventory` as a proper aggregate owning the
-no-overbooking invariant, replacing `EventAvailabilityAdapter`'s
-read-then-save-and-hope-nobody-else-wrote-in-between with real invariant enforcement.
-`Money`/`SeatNumber`/`BookingId` as value objects, domain events, an
-overbooking-impossible test. `EventAvailabilityPort` and `BookingService` shouldn't
-need to change at all — today's whole point.
 

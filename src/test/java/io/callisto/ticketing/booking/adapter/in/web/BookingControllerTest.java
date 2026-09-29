@@ -6,6 +6,7 @@ import io.callisto.ticketing.booking.TooManySeatsRequestedException;
 import io.callisto.ticketing.booking.adapter.in.web.dto.BookingRequest;
 import io.callisto.ticketing.booking.application.BookingService;
 import io.callisto.ticketing.booking.domain.Booking;
+import io.callisto.ticketing.booking.domain.BookingId;
 import io.callisto.ticketing.booking.domain.BookingStatus;
 import io.callisto.ticketing.catalog.EventNotFoundException;
 import org.junit.jupiter.api.Test;
@@ -63,7 +64,7 @@ class BookingControllerTest {
 
 	@Test
 	void rejectsCancellingAnAlreadyCancelledBooking() throws Exception {
-		when(bookings.cancel(EVENT_ID, BOOKING_ID)).thenThrow(new BookingAlreadyCancelledException(BOOKING_ID));
+		when(bookings.cancel(EVENT_ID, BookingId.of(BOOKING_ID))).thenThrow(new BookingAlreadyCancelledException(BOOKING_ID));
 
 		mockMvc.perform(post("/events/" + EVENT_ID + "/bookings/" + BOOKING_ID + "/cancel"))
 				.andExpect(status().isConflict());
@@ -71,7 +72,7 @@ class BookingControllerTest {
 
 	@Test
 	void rejectsFetchingABookingUnderTheWrongEvent() throws Exception {
-		when(bookings.get(999L, BOOKING_ID)).thenThrow(new BookingNotFoundException(BOOKING_ID));
+		when(bookings.get(999L, BookingId.of(BOOKING_ID))).thenThrow(new BookingNotFoundException(BOOKING_ID));
 
 		mockMvc.perform(get("/events/999/bookings/" + BOOKING_ID))
 				.andExpect(status().isNotFound());

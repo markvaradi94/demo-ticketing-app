@@ -1,5 +1,6 @@
 package io.callisto.ticketing.booking.adapter.out.catalog;
 
+import io.callisto.ticketing.booking.domain.SeatCount;
 import io.callisto.ticketing.catalog.Event;
 import io.callisto.ticketing.catalog.EventNotFoundException;
 import io.callisto.ticketing.catalog.EventRepository;
@@ -32,7 +33,7 @@ class EventAvailabilityAdapterTest {
 	void reservesSeatsByIncrementingBookedSeats() {
 		when(events.findById(EVENT_ID)).thenReturn(Optional.of(stubEvent(3)));
 
-		adapter.reserveSeats(EVENT_ID, 2);
+		adapter.reserveSeats(EVENT_ID, SeatCount.of(2));
 
 		verify(events).save(argThat(event -> event.getBookedSeats() == 5));
 	}
@@ -41,7 +42,7 @@ class EventAvailabilityAdapterTest {
 	void throwsWhenTheEventDoesNotExist() {
 		when(events.findById(999L)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> adapter.reserveSeats(999L, 1)).isInstanceOf(EventNotFoundException.class);
+		assertThatThrownBy(() -> adapter.reserveSeats(999L, SeatCount.of(1))).isInstanceOf(EventNotFoundException.class);
 	}
 
 	private static Event stubEvent(int bookedSeats) {

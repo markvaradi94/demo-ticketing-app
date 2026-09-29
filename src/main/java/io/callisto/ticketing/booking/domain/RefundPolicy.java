@@ -9,11 +9,11 @@ public final class RefundPolicy {
 	private RefundPolicy() {
 	}
 
-	public static BigDecimal refundAmount(BookingStatus status, BigDecimal paidAmount) {
+	public static Money refundAmount(BookingStatus status, Money paidAmount) {
 		return switch (status) {
 			case PENDING -> paidAmount;
 			case CONFIRMED -> paidAmount.multiply(HALF);
-			case CANCELLED -> BigDecimal.ZERO;
+			case CANCELLED -> Money.ZERO;
 		};
 	}
 

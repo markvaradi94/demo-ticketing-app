@@ -6,7 +6,9 @@ import io.callisto.ticketing.booking.TooManySeatsRequestedException;
 import io.callisto.ticketing.booking.application.port.out.BookingRepositoryPort;
 import io.callisto.ticketing.booking.application.port.out.EventAvailabilityPort;
 import io.callisto.ticketing.booking.domain.Booking;
+import io.callisto.ticketing.booking.domain.BookingId;
 import io.callisto.ticketing.booking.domain.BookingStatus;
+import io.callisto.ticketing.booking.domain.SeatCount;
 import io.callisto.ticketing.catalog.EventNotFoundException;
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +17,6 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -53,7 +54,7 @@ class BookingServiceTest {
 
 		assertThat(created.getSeatCount()).isEqualTo(2);
 		assertThat(created.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
-		verify(events).reserveSeats(EVENT_ID, 2);
+		verify(events).reserveSeats(EVENT_ID, SeatCount.of(2));
 	}
 
 	@Test
@@ -62,13 +63,13 @@ class BookingServiceTest {
 
 		assertThatThrownBy(() -> service.create(unsavedBooking(EVENT_ID, "Margaret Hamilton", 50)))
 				.isInstanceOf(TooManySeatsRequestedException.class);
-		verify(events, never()).reserveSeats(any(), anyInt());
+		verify(events, never()).reserveSeats(any(), any());
 	}
 
 	@Test
 	void rejectsBookingAnUnknownEvent() {
 		when(bookingProperties.maxSeatsPerBooking()).thenReturn(8);
-		doThrow(new EventNotFoundException(999L)).when(events).reserveSeats(999L, 1);
+		doThrow(new EventNotFoundException(999L)).when(events).reserveSeats(999L, SeatCount.of(1));
 
 		assertThatThrownBy(() -> service.create(unsavedBooking(999L, "Alan Turing", 1)))
 				.isInstanceOf(EventNotFoundException.class);
@@ -78,19 +79,19 @@ class BookingServiceTest {
 	void rejectsFetchingABookingUnderTheWrongEvent() {
 		Booking booking = Booking.builder().id(1L).eventId(EVENT_ID).customerName("Hedy Lamarr")
 				.seatCount(1).status(BookingStatus.CONFIRMED).build();
-		when(bookings.findById(1L)).thenReturn(Optional.of(booking));
+		when(bookings.findById(BookingId.of(1L))).thenReturn(Optional.of(booking));
 
-		assertThatThrownBy(() -> service.get(999L, 1L)).isInstanceOf(BookingNotFoundException.class);
+		assertThatThrownBy(() -> service.get(999L, BookingId.of(1L))).isInstanceOf(BookingNotFoundException.class);
 	}
 
 	@Test
 	void cancelsAConfirmedBooking() {
 		Booking booking = Booking.builder().id(1L).eventId(EVENT_ID).customerName("Grace Hopper")
 				.seatCount(1).status(BookingStatus.CONFIRMED).build();
-		when(bookings.findById(1L)).thenReturn(Optional.of(booking));
+		when(bookings.findById(BookingId.of(1L))).thenReturn(Optional.of(booking));
 		when(bookings.save(any(Booking.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-		Booking cancelled = service.cancel(EVENT_ID, 1L);
+		Booking cancelled = service.cancel(EVENT_ID, BookingId.of(1L));
 
 		assertThat(cancelled.getStatus()).isEqualTo(BookingStatus.CANCELLED);
 	}
@@ -99,9 +100,9 @@ class BookingServiceTest {
 	void rejectsCancellingAnAlreadyCancelledBooking() {
 		Booking cancelled = Booking.builder().id(1L).eventId(EVENT_ID).customerName("Grace Hopper")
 				.seatCount(1).status(BookingStatus.CANCELLED).build();
-		when(bookings.findById(1L)).thenReturn(Optional.of(cancelled));
+		when(bookings.findById(BookingId.of(1L))).thenReturn(Optional.of(cancelled));
 
-		assertThatThrownBy(() -> service.cancel(EVENT_ID, 1L)).isInstanceOf(BookingAlreadyCancelledException.class);
+		assertThatThrownBy(() -> service.cancel(EVENT_ID, BookingId.of(1L))).isInstanceOf(BookingAlreadyCancelledException.class);
 	}
 
 	private static Booking unsavedBooking(Long eventId, String customerName, int seatCount) {

@@ -4,6 +4,7 @@ import io.callisto.ticketing.booking.adapter.in.web.dto.BookingRequest;
 import io.callisto.ticketing.booking.adapter.in.web.dto.BookingResponse;
 import io.callisto.ticketing.booking.application.BookingService;
 import io.callisto.ticketing.booking.domain.Booking;
+import io.callisto.ticketing.booking.domain.BookingId;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -32,12 +33,12 @@ public class BookingController {
 
 	@GetMapping("/{bookingId}")
 	public BookingResponse get(@PathVariable Long eventId, @PathVariable Long bookingId) {
-		return BookingMapper.toResponse(bookings.get(eventId, bookingId));
+		return BookingMapper.toResponse(bookings.get(eventId, BookingId.of(bookingId)));
 	}
 
 	@PostMapping("/{bookingId}/cancel")
 	public BookingResponse cancel(@PathVariable Long eventId, @PathVariable Long bookingId) {
-		return BookingMapper.toResponse(bookings.cancel(eventId, bookingId));
+		return BookingMapper.toResponse(bookings.cancel(eventId, BookingId.of(bookingId)));
 	}
 
 }

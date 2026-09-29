@@ -2,6 +2,7 @@ package io.callisto.ticketing.booking.adapter.out.persistence;
 
 import io.callisto.ticketing.booking.application.port.out.BookingRepositoryPort;
 import io.callisto.ticketing.booking.domain.Booking;
+import io.callisto.ticketing.booking.domain.BookingId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -22,8 +23,8 @@ class BookingRepositoryAdapter implements BookingRepositoryPort {
 	}
 
 	@Override
-	public Optional<Booking> findById(Long id) {
-		return bookings.findById(id);
+	public Optional<Booking> findById(BookingId id) {
+		return bookings.findById(id.value());
 	}
 
 }
