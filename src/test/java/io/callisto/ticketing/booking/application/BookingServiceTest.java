@@ -3,49 +3,49 @@ package io.callisto.ticketing.booking.application;
 import io.callisto.ticketing.booking.BookingAlreadyCancelledException;
 import io.callisto.ticketing.booking.BookingNotFoundException;
 import io.callisto.ticketing.booking.TooManySeatsRequestedException;
-import io.callisto.ticketing.booking.adapter.out.persistence.BookingRepository;
+import io.callisto.ticketing.booking.application.port.out.BookingRepositoryPort;
+import io.callisto.ticketing.booking.application.port.out.EventAvailabilityPort;
 import io.callisto.ticketing.booking.domain.Booking;
 import io.callisto.ticketing.booking.domain.BookingStatus;
-import io.callisto.ticketing.catalog.Event;
 import io.callisto.ticketing.catalog.EventNotFoundException;
-import io.callisto.ticketing.catalog.EventRepository;
-import io.callisto.ticketing.catalog.Venue;
 import org.junit.jupiter.api.Test;
 
-import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit test: {@link BookingService}'s business rules — too-many-seats,
- * cancel-twice, wrong-event scoping, and the {@code bookedSeats} increment — with
- * {@link BookingRepository}, {@link EventRepository}, and {@link BookingProperties}
- * all mocked, no Spring context or database. {@link BookingService#create} takes an
- * already-built {@link Booking}, not a request DTO — the adapter owns that mapping now,
- * so this test builds the domain object directly the same way the controller's mapper
- * does. For the HTTP contract see
- * {@link io.callisto.ticketing.booking.adapter.in.web.BookingControllerTest}; for proof
- * the increment genuinely survives a race against real Postgres, see
- * {@code EventRepositoryTest.rejectsASecondSaveAgainstAStaleVersion()}.
+ * Unit test: {@link BookingService}'s business rules — too-many-seats, cancel-twice,
+ * wrong-event scoping — with {@link BookingRepositoryPort}, {@link EventAvailabilityPort},
+ * and {@link BookingProperties} all mocked, no Spring context or database. Mocking the
+ * port rather than {@code EventRepository} directly means this test can no longer see
+ * the actual {@code bookedSeats} increment — that logic now lives in
+ * {@link io.callisto.ticketing.booking.adapter.out.catalog.EventAvailabilityAdapter},
+ * proven by its own {@code EventAvailabilityAdapterTest}. This test only proves
+ * {@link BookingService} calls the port correctly. For the HTTP contract see
+ * {@link io.callisto.ticketing.booking.adapter.in.web.BookingControllerTest}; for the
+ * full stack including the real increment, see
+ * {@link io.callisto.ticketing.BookingJourneyIntegrationTest}.
  */
 class BookingServiceTest {
 
 	private static final Long EVENT_ID = 1L;
 
-	private final BookingRepository bookings = mock(BookingRepository.class);
-	private final EventRepository events = mock(EventRepository.class);
+	private final BookingRepositoryPort bookings = mock(BookingRepositoryPort.class);
+	private final EventAvailabilityPort events = mock(EventAvailabilityPort.class);
 	private final BookingProperties bookingProperties = mock(BookingProperties.class);
 	private final BookingService service = new BookingService(bookings, events, bookingProperties);
 
 	@Test
-	void createsABookingAndIncrementsTheEventsBookedSeats() {
-		when(events.findById(EVENT_ID)).thenReturn(Optional.of(stubEvent(0)));
+	void createsABookingAndReservesSeatsThroughThePort() {
 		when(bookingProperties.maxSeatsPerBooking()).thenReturn(8);
 		when(bookings.save(any(Booking.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -53,21 +53,22 @@ class BookingServiceTest {
 
 		assertThat(created.getSeatCount()).isEqualTo(2);
 		assertThat(created.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
-		verify(events).save(argThatBookedSeatsEquals(2));
+		verify(events).reserveSeats(EVENT_ID, 2);
 	}
 
 	@Test
-	void rejectsMoreSeatsThanAllowed() {
-		when(events.findById(EVENT_ID)).thenReturn(Optional.of(stubEvent(0)));
+	void rejectsMoreSeatsThanAllowedWithoutEverCallingThePort() {
 		when(bookingProperties.maxSeatsPerBooking()).thenReturn(8);
 
 		assertThatThrownBy(() -> service.create(unsavedBooking(EVENT_ID, "Margaret Hamilton", 50)))
 				.isInstanceOf(TooManySeatsRequestedException.class);
+		verify(events, never()).reserveSeats(any(), anyInt());
 	}
 
 	@Test
 	void rejectsBookingAnUnknownEvent() {
-		when(events.findById(999L)).thenReturn(Optional.empty());
+		when(bookingProperties.maxSeatsPerBooking()).thenReturn(8);
+		doThrow(new EventNotFoundException(999L)).when(events).reserveSeats(999L, 1);
 
 		assertThatThrownBy(() -> service.create(unsavedBooking(999L, "Alan Turing", 1)))
 				.isInstanceOf(EventNotFoundException.class);
@@ -106,16 +107,6 @@ class BookingServiceTest {
 	private static Booking unsavedBooking(Long eventId, String customerName, int seatCount) {
 		return Booking.builder().eventId(eventId).customerName(customerName)
 				.seatCount(seatCount).status(BookingStatus.CONFIRMED).build();
-	}
-
-	private static Event stubEvent(int bookedSeats) {
-		Venue venue = Venue.builder().id(1L).name("Blue Room").capacity(120).build();
-		return Event.builder().id(EVENT_ID).name("Jazz Night").venue(venue)
-				.startTime(Instant.now()).bookedSeats(bookedSeats).build();
-	}
-
-	private static Event argThatBookedSeatsEquals(int expected) {
-		return org.mockito.ArgumentMatchers.argThat(event -> event.getBookedSeats() == expected);
 	}
 
 }
