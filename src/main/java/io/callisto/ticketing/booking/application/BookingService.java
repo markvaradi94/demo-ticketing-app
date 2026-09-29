@@ -6,10 +6,12 @@ import io.callisto.ticketing.booking.TooManySeatsRequestedException;
 import io.callisto.ticketing.booking.application.port.out.BookingRepositoryPort;
 import io.callisto.ticketing.booking.application.port.out.EventAvailabilityPort;
 import io.callisto.ticketing.booking.domain.Booking;
+import io.callisto.ticketing.booking.domain.BookingCancelled;
 import io.callisto.ticketing.booking.domain.BookingId;
 import io.callisto.ticketing.booking.domain.BookingStatus;
 import io.callisto.ticketing.booking.domain.SeatCount;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 // Public — adapter.in.web.BookingController is a different package now that the
@@ -18,10 +20,9 @@ import org.springframework.stereotype.Service;
 //
 // Depends only on the two outbound ports now, not on any adapter.* type or on
 // catalog directly — BookingArchitectureTests enforces that with an ArchUnit
-// layeredArchitecture() rule. EventAvailabilityPort's adapter still reaches
-// catalog.EventRepository directly to read *and mutate* bookedSeats, and still
-// doesn't check capacity at all — this session's actual gap, fixed by replacing
-// that one adapter's insides, not this class or the port.
+// layeredArchitecture() rule. EventAvailabilityPort's adapter reaches
+// catalog.EventRepository directly to read *and mutate* bookedSeats, but the
+// no-overbooking invariant itself now lives on the EventInventory aggregate.
 @Service
 @RequiredArgsConstructor
 public class BookingService {
@@ -29,6 +30,7 @@ public class BookingService {
 	private final BookingRepositoryPort bookings;
 	private final EventAvailabilityPort events;
 	private final BookingProperties bookingProperties;
+	private final ApplicationEventPublisher eventPublisher;
 
 	public Booking create(Booking newBooking) {
 		if (newBooking.getSeatCount() > bookingProperties.maxSeatsPerBooking()) {
@@ -46,10 +48,14 @@ public class BookingService {
 
 	public Booking cancel(Long eventId, BookingId bookingId) {
 		Booking booking = findOrThrow(eventId, bookingId);
+
 		if (booking.getStatus() == BookingStatus.CANCELLED) {
 			throw new BookingAlreadyCancelledException(bookingId.value());
 		}
-		return bookings.save(booking.toBuilder().status(BookingStatus.CANCELLED).build());
+
+		Booking cancelled = bookings.save(booking.toBuilder().status(BookingStatus.CANCELLED).build());
+		eventPublisher.publishEvent(new BookingCancelled(cancelled.getEventId(), SeatCount.of(cancelled.getSeatCount())));
+		return cancelled;
 	}
 
 	private Booking findOrThrow(Long eventId, BookingId bookingId) {

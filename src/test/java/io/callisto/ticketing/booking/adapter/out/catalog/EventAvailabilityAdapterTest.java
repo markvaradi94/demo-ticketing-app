@@ -1,5 +1,6 @@
 package io.callisto.ticketing.booking.adapter.out.catalog;
 
+import io.callisto.ticketing.booking.OverbookingException;
 import io.callisto.ticketing.booking.domain.SeatCount;
 import io.callisto.ticketing.catalog.Event;
 import io.callisto.ticketing.catalog.EventNotFoundException;
@@ -39,10 +40,43 @@ class EventAvailabilityAdapterTest {
 	}
 
 	@Test
+	void refusesToExceedCapacity() {
+		when(events.findById(EVENT_ID)).thenReturn(Optional.of(stubEvent(119)));
+
+		assertThatThrownBy(() -> adapter.reserveSeats(EVENT_ID, SeatCount.of(2)))
+				.isInstanceOf(OverbookingException.class);
+	}
+
+	@Test
 	void throwsWhenTheEventDoesNotExist() {
 		when(events.findById(999L)).thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> adapter.reserveSeats(999L, SeatCount.of(1))).isInstanceOf(EventNotFoundException.class);
+	}
+
+	@Test
+	void releasesSeatsByDecrementingBookedSeats() {
+		when(events.findById(EVENT_ID)).thenReturn(Optional.of(stubEvent(5)));
+
+		adapter.releaseSeats(EVENT_ID, SeatCount.of(2));
+
+		verify(events).save(argThat(event -> event.getBookedSeats() == 3));
+	}
+
+	@Test
+	void releaseNeverGoesBelowZero() {
+		when(events.findById(EVENT_ID)).thenReturn(Optional.of(stubEvent(1)));
+
+		adapter.releaseSeats(EVENT_ID, SeatCount.of(5));
+
+		verify(events).save(argThat(event -> event.getBookedSeats() == 0));
+	}
+
+	@Test
+	void throwsWhenReleasingForAnUnknownEvent() {
+		when(events.findById(999L)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> adapter.releaseSeats(999L, SeatCount.of(1))).isInstanceOf(EventNotFoundException.class);
 	}
 
 	private static Event stubEvent(int bookedSeats) {

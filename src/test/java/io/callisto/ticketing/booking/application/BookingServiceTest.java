@@ -6,11 +6,13 @@ import io.callisto.ticketing.booking.TooManySeatsRequestedException;
 import io.callisto.ticketing.booking.application.port.out.BookingRepositoryPort;
 import io.callisto.ticketing.booking.application.port.out.EventAvailabilityPort;
 import io.callisto.ticketing.booking.domain.Booking;
+import io.callisto.ticketing.booking.domain.BookingCancelled;
 import io.callisto.ticketing.booking.domain.BookingId;
 import io.callisto.ticketing.booking.domain.BookingStatus;
 import io.callisto.ticketing.booking.domain.SeatCount;
 import io.callisto.ticketing.catalog.EventNotFoundException;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.Optional;
 
@@ -43,7 +45,8 @@ class BookingServiceTest {
 	private final BookingRepositoryPort bookings = mock(BookingRepositoryPort.class);
 	private final EventAvailabilityPort events = mock(EventAvailabilityPort.class);
 	private final BookingProperties bookingProperties = mock(BookingProperties.class);
-	private final BookingService service = new BookingService(bookings, events, bookingProperties);
+	private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+	private final BookingService service = new BookingService(bookings, events, bookingProperties, eventPublisher);
 
 	@Test
 	void createsABookingAndReservesSeatsThroughThePort() {
@@ -94,6 +97,7 @@ class BookingServiceTest {
 		Booking cancelled = service.cancel(EVENT_ID, BookingId.of(1L));
 
 		assertThat(cancelled.getStatus()).isEqualTo(BookingStatus.CANCELLED);
+		verify(eventPublisher).publishEvent(new BookingCancelled(EVENT_ID, SeatCount.of(1)));
 	}
 
 	@Test
@@ -103,6 +107,7 @@ class BookingServiceTest {
 		when(bookings.findById(BookingId.of(1L))).thenReturn(Optional.of(cancelled));
 
 		assertThatThrownBy(() -> service.cancel(EVENT_ID, BookingId.of(1L))).isInstanceOf(BookingAlreadyCancelledException.class);
+		verify(eventPublisher, never()).publishEvent(any());
 	}
 
 	private static Booking unsavedBooking(Long eventId, String customerName, int seatCount) {

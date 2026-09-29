@@ -62,4 +62,48 @@ class BookingJourneyIntegrationTest extends AbstractIntegrationTest {
 		rest.exchange("/events/" + eventId, HttpMethod.DELETE, null, Void.class);
 	}
 
+	@Test
+	void rejectsABookingThatWouldExceedCapacity() {
+		EventRequest eventRequest = new EventRequest("Tiny Room Gig", "Back Room", 3, Instant.now().plus(10, ChronoUnit.DAYS));
+		ResponseEntity<EventResponse> eventCreated = rest.postForEntity("/events", eventRequest, EventResponse.class);
+		Long eventId = eventCreated.getBody().id();
+
+		ResponseEntity<BookingResponse> firstBooking = rest.postForEntity(
+				"/events/" + eventId + "/bookings", new BookingRequest("Ada Lovelace", 3), BookingResponse.class);
+		assertThat(firstBooking.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+		ResponseEntity<String> overbooked = rest.postForEntity(
+				"/events/" + eventId + "/bookings", new BookingRequest("Alan Turing", 1), String.class);
+		assertThat(overbooked.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+
+		rest.exchange("/events/" + eventId, HttpMethod.DELETE, null, Void.class);
+	}
+
+	@Test
+	void cancellingABookingReleasesItsSeatsForReuse() {
+		EventRequest eventRequest = new EventRequest("Small Room Gig", "Back Room", 2, Instant.now().plus(10, ChronoUnit.DAYS));
+		ResponseEntity<EventResponse> eventCreated = rest.postForEntity("/events", eventRequest, EventResponse.class);
+		Long eventId = eventCreated.getBody().id();
+
+		ResponseEntity<BookingResponse> booked = rest.postForEntity(
+				"/events/" + eventId + "/bookings", new BookingRequest("Ada Lovelace", 2), BookingResponse.class);
+		assertThat(booked.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+		Long bookingId = booked.getBody().id();
+
+		// At capacity — a second booking is rejected until the first is cancelled.
+		ResponseEntity<String> rejectedWhileFull = rest.postForEntity(
+				"/events/" + eventId + "/bookings", new BookingRequest("Alan Turing", 1), String.class);
+		assertThat(rejectedWhileFull.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+
+		rest.postForEntity("/events/" + eventId + "/bookings/" + bookingId + "/cancel", null, BookingResponse.class);
+
+		// Cancelling published BookingCancelled, the listener released the seats
+		// synchronously — the same booking that just failed now succeeds.
+		ResponseEntity<BookingResponse> rebooked = rest.postForEntity(
+				"/events/" + eventId + "/bookings", new BookingRequest("Alan Turing", 1), BookingResponse.class);
+		assertThat(rebooked.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+		rest.exchange("/events/" + eventId, HttpMethod.DELETE, null, Void.class);
+	}
+
 }

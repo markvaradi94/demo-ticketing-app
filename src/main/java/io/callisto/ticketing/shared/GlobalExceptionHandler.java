@@ -2,6 +2,7 @@ package io.callisto.ticketing.shared;
 
 import io.callisto.ticketing.booking.BookingAlreadyCancelledException;
 import io.callisto.ticketing.booking.BookingNotFoundException;
+import io.callisto.ticketing.booking.OverbookingException;
 import io.callisto.ticketing.booking.TooManySeatsRequestedException;
 import io.callisto.ticketing.catalog.EventNotFoundException;
 import org.springframework.http.HttpStatus;
@@ -28,6 +29,11 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(BookingAlreadyCancelledException.class)
 	public ProblemDetail handleAlreadyCancelled(BookingAlreadyCancelledException exception) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+	}
+
+	@ExceptionHandler(OverbookingException.class)
+	public ProblemDetail handleOverbooking(OverbookingException exception) {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
 	}
 
