@@ -8,7 +8,7 @@ history is the course.
 
 Two branches per session: `session-NN-start` is what you check out before the
 session begins, `session-NN-end` is the finished state after that session's live
-coding and lab. You are currently on **`session-07-end`**.
+coding and lab. You are currently on **`session-08-start`**.
 
 ## Prerequisites
 
@@ -36,139 +36,67 @@ builds and tests every subproject (`core-app`, `payment-service`,
 Testcontainers-backed test suite; `payment-service` and `notification-service` are
 plain, fast-booting Spring Boot apps.
 
-## Where things stand — Session 7: Distribution (end)
+## Where things stand — Session 8: Cloud Run (start)
 
-`session-07-start` did the heavy structural lift (multi-module, two new services,
-RabbitMQ infrastructure, pricing) — see its README for that. This session is where
-those pieces actually get used: `core-app` calls `payment-service` for real,
-protected by Resilience4j; a booking's lifecycle gets published to RabbitMQ and
-`notification-service` genuinely consumes it, with an idempotency check and a
-dead-letter queue; and the blocking payment call becomes this course's first
-hands-on virtual-threads demo.
+A different kind of session, and a different kind of `-start` branch. Sessions 1–7
+could all be fully built, tested, and verified by running `./gradlew build` — every
+piece of infrastructure was Docker-on-a-laptop, reproducible for anyone, verifiable
+by CI. Session 8 leaves that world: Cloud Run, Cloud SQL, Atlas, CloudAMQP, and
+Secret Manager are real external services with real accounts behind them. This
+branch's code diff is genuinely small — one dependency addition — because most of
+this session's actual "setup" isn't code at all, it's provisioning real accounts,
+documented below rather than committed to a branch.
 
-### Live coding — calling payment-service, protected
+**A real, confirmed incompatibility, worth documenting rather than working around
+silently:** the obvious choice for Secret Manager — `spring-cloud-gcp-starter-secretmanager`
+— does not support Spring Boot 4. It's not a missing-feature gap; released versions
+(through 8.1.1) throw errors at startup from outdated `ConfigData` bootstrap
+initialization logic that hasn't been updated for Boot 4's new lifecycle, confirmed
+against this project's own open GitHub issue tracking the incompatibility. This
+course has been strict about verifying every dependency against Boot 4.1.1 before
+shipping it (Resilience4j needed the `-spring-boot4` artifact specifically, not
+`-spring-boot3`; Spring AMQP's JSON converter needed the Jackson-3-native
+`JacksonJsonMessageConverter`, not the deprecated `Jackson2` one) — this is the first
+time that check came back negative outright. Session 8 hand-rolls Secret Manager
+integration instead, using the plain `com.google.cloud:google-cloud-secretmanager`
+client directly (unaffected by the Spring starter's bootstrap-lifecycle problem,
+since it's not a Spring integration at all) via a custom `EnvironmentPostProcessor`
+— live-coding content, not baseline, see `session-08-end`'s README.
 
-**The naive `@TimeLimiter` approach doesn't apply here, and that's worth teaching
-directly:** `@TimeLimiter` enforces a timeout by racing a `CompletableFuture` against
-a timer — it needs an async return type to have anything to act on. `PaymentAdapter`
-stays a plain blocking `RestClient` call, matching how this whole codebase has stayed
-synchronous throughout, so the real timeout protection lives where it actually can:
-`PaymentClientConfig`'s `RestClient` bean, built with an explicit connect/read
-timeout via `HttpClientSettings` (`payment-service.read-timeout=2s` — shorter than
-payment-service's genuine 5-second slow path, on purpose, so there's something real
-for `@Retry`/`@CircuitBreaker` to react to).
+**`shared` picks up a second kind of cross-service concern, its scope honestly
+widened:** until now it held only RabbitMQ message contracts. Both `core-app` and
+`notification-service` need the same secret-fetching mechanism on the `cloud`
+profile — genuine shared infrastructure, the same "more than one deployable needs to
+agree on or reuse" reasoning that put the message contracts there in the first
+place, just a different flavor of it. `com.google.cloud:libraries-bom` (Google's own
+BOM for aligning `google-cloud-*` artifact versions) and
+`google-cloud-secretmanager` are added now, unused — same "dependency first, code
+next session" pattern sessions 4, 5, and 7 all used for their own verification
+tools. `shared` also gains a direct `spring-boot` (core jar only, no starter, no
+Spring Boot Gradle plugin) dependency — the one jar `EnvironmentPostProcessor`'s
+interface lives in; `shared` isn't itself a bootable app, so it needs the interface,
+not the whole framework.
 
-**`PaymentPort`/`PaymentAdapter`** — one method, `charge(String reference,
-BigDecimal amount)`, same narrow shape as every other port this course has built.
-`@Retry(name = "payment")` and `@CircuitBreaker(name = "payment")` decorate the
-adapter method directly (Resilience4j's aspect order is fixed — Retry wraps
-CircuitBreaker, not the other way around, regardless of annotation order). Both are
-configured with small numbers in `application.properties` — a 4-call sliding window,
-2 retry attempts — because Resilience4j's own defaults (100-call window,
-100-call minimum) are sized for production traffic, not a classroom.
+**Before you teach this — real provisioning, not code, and it has to happen ahead of
+time:**
 
-**A decline is not a fault, and both patterns are told so explicitly:**
-`PaymentAdapter` catches a 402 response and throws `PaymentDeclinedException`
-(booking's root package, applying session 5's placement lesson correctly from the
-start — see `session-06-start`'s README for where that lesson was first learned the
-hard way); both `resilience4j.retry.instances.payment.ignore-exceptions` and
-`resilience4j.circuitbreaker.instances.payment.ignore-exceptions` name it explicitly.
-payment-service correctly declining a large charge isn't the dependency being
-unhealthy — it shouldn't cost a retry or count against the breaker the way a timeout
-or a 5xx does.
-
-**The flow, reordered to avoid needing a refund:** `BookingService.create()` reserves
-seats *before* charging, not after — if the charge fails for any reason,
-`events.releaseSeats(...)` undoes the reservation, reusing the exact method session
-6 built for cancellation's seat-release. Charging before reserving would risk a
-successful charge with no seats to show for it, and this fake gateway has no refund
-endpoint to compensate with; reserving first means a failed payment simply means the
-booking attempt never happened.
-
-**`GlobalExceptionHandler` gains three mappings:** `PaymentDeclinedException` → 402,
-matching payment-service's own status for the same outcome; `CallNotPermittedException`
-(the circuit breaker refusing to even try) and `ResourceAccessException` (every retry
-attempt hit the read timeout) both → 503, the honest answer once `@Retry` has already
-exhausted its attempts — the dependency isn't available right now, not "something
-about this specific request is wrong."
-
-**The virtual threads demo — command-line config, not new code:** fire concurrent
-`POST /events/{id}/bookings` requests against an event priced into payment-service's
-slow bucket (seat count × price per seat between €1,000 and €1,999.99), first with
-platform threads (the default), then with
-`./gradlew :core-app:bootRun --args='--spring.threads.virtual.enabled=true
---payment-service.read-timeout=10s'` — the read-timeout override matters here
-specifically: the resilience demo's 2s default would cut the block short before
-there's anything to observe, so bump it past the genuine 5s sleep for this one
-demo. Compare thread behavior under load between the two runs.
-
-### Lab Task 1 — publish and consume, for real
-
-**`BookingEventPublisherPort`, a new port distinct from session 6's
-`ApplicationEventPublisher` usage:** `ApplicationEventPublisher` is Spring's own
-in-process event bus — framework infrastructure, injected directly into
-`BookingService`, no port, same category as a method call. RabbitMQ is a genuine
-external system crossing a real network hop to a different deployable — more like
-`PaymentPort`/`EventAvailabilityPort` than like in-process eventing, so it gets a
-port too. `RabbitBookingEventPublisher` implements it, translating a `Booking` into
-the matching `shared` message record and publishing via `RabbitTemplate` to the
-exchange `session-07-start` already declared.
-
-**One booking-cancelled moment, two independent reactions, two different
-mechanisms:** `BookingService.cancel()` still publishes the in-JVM `BookingCancelled`
-event (releases seats, unchanged since session 6) *and* now calls
-`bookingEvents.publishCancelled(...)` (tells the outside world) — neither knows the
-other exists.
-
-**A message converter matters as much as the exchange:** Spring AMQP's default
-`SimpleMessageConverter` falls back to JDK serialization for anything that isn't a
-`String`/`byte[]`, which nothing on the consuming side could realistically decode.
-Both `core-app` and `notification-service` register a `JacksonJsonMessageConverter`
-bean — Jackson 3's replacement for the now-deprecated `Jackson2JsonMessageConverter`,
-matching this Boot version — so messages travel as real JSON.
-`notification-service` needed a new dependency for this to actually work at runtime,
-not just compile: `spring-boot-starter-jackson`, since unlike `core-app`/
-`payment-service` it has no web starter to pull Jackson 3 in transitively.
-
-**`notification-service`'s own queues, not core-app's to dictate:**
-`BookingEventsQueueConfig` declares two durable queues — one per message shape,
-rather than one shared queue two listeners would compete over — bound to `core-app`'s
-exchange with routing keys `booking.created`/`booking.cancelled`.
-`BookingEventsListener` gets its first real `@RabbitListener` methods, logging a
-simulated notification for each.
-
-### Lab Task 2 — idempotency and a dead-letter queue
-
-**In-memory idempotency, documented as a deliberate simplification:**
-`BookingEventsListener.alreadyProcessed(Long)` — a `ConcurrentHashMap.newKeySet()`
-of booking ids, `Set.add()` doing both the check and the insert atomically. A restart
-forgets everything, and a second instance in a scaled-out deployment wouldn't share
-this set at all; a real system would persist processed ids, or lean on the
-notification side effect itself being naturally idempotent. Named honestly rather
-than left as a silent gap.
-
-**A message this service can never process shouldn't loop forever:**
-`spring.rabbitmq.listener.simple.default-requeue-rejected=false` — the default is
-`true`, which would requeue and redeliver an unhandled exception indefinitely.
-`false`, combined with the created queue's `x-dead-letter-exchange`/
-`-routing-key` arguments (`BookingEventsQueueConfig`), routes a genuinely
-unprocessable message to `notification.booking-created.dlq` instead. Demoed by hand
-via RabbitMQ's management UI (port 15672, already forwarded since
-`session-07-start`) — publish a deliberately malformed body directly to the
-exchange and watch it land in the DLQ rather than vanish or loop. Only wired for the
-created queue this session; the same pattern applies to the cancelled queue, not
-repeated here for lab time.
-
-**The one test in this session proving the actual broker plumbing works, not just
-that the code compiles:** `BookingEventsListenerIntegrationTest`, a real
-`RabbitMQContainer` (managed the same way `AbstractIntegrationTest` manages
-Postgres/Mongo — a manual static block, not the `@Testcontainers`/`@Container`
-extension, which would need its own separate dependency), publishing a real
-`BookingCreatedMessage` through the real exchange and routing key, asserting the
-real listener genuinely received and processed it. `BookingJourneyIntegrationTest`,
-by contrast, mocks both `PaymentPort` and `BookingEventPublisherPort` — payment-service
-and RabbitMQ are infrastructure that test suite doesn't start, and a real
-cross-service contract test is out of scope for this course.
+- **A GCP project**, with billing enabled (GCP requires a card for identity
+  verification even to use Always Free services — worth saying plainly to students
+  rather than promising "no card, ever"). Cloud Run's Always Free tier (2M
+  requests/month, permanent, no trial credit needed) comfortably covers this
+  session's actual traffic.
+- **One small, shared Cloud SQL Postgres instance**, provisioned by the instructor
+  days before class — instance creation takes several minutes, real lab time nobody
+  should spend waiting. Cloud SQL has no free tier at all; this is the one piece
+  with a genuine (small, one-time, instructor-only) cost. A database/schema per
+  student on the same instance, deleted the same day the session ends.
+- **MongoDB Atlas M0** — free forever, no credit card, per student. No change from
+  how `review`'s persistence has worked since session 3; only the connection string
+  moves from local to a real cluster.
+- **CloudAMQP's "Little Lemur" plan** — free, no card, per student (1M
+  messages/month is far beyond what a lab needs). Replaces the local
+  `compose/docker-compose.yml` RabbitMQ once `core-app`/`notification-service` are
+  running somewhere that can't reach `localhost:5672` anymore.
 
 ## Testing strategy — all four layers, explicitly
 
@@ -260,28 +188,3 @@ on both sides: the integration test now deletes what it created, and the reposit
 test no longer trusts the shared table to contain only its own rows — it filters
 `findAll()`'s result down to the ids it just saved before asserting on it.
 
-## Homework
-
-A standalone exercise, not a change to this repo. Take any project with an outbound
-call to something that can be slow or fail (a real third-party API is ideal; a small
-local HTTP server you control is fine too) and add Resilience4j the way this session
-did: a `@Retry` and a `@CircuitBreaker` on the call, both configured with small,
-demoable numbers rather than the library's own production-sized defaults. Prove the
-circuit breaker genuinely opens — force enough consecutive failures to trip it
-(sliding-window-size small enough to reach in a few calls), then confirm a
-subsequent call fails immediately without even attempting the real call underneath.
-Separately: if the call is genuinely blocking (not already `CompletableFuture`-based),
-resist the urge to reach for `@TimeLimiter` — work out from first principles why it
-wouldn't do anything useful there, the same reasoning this session applied to
-`PaymentAdapter`, and configure a client-side read timeout instead.
-
-Same mechanic as watching `PaymentAdapter`'s breaker open and payment-service's
-slow path get cut short by a real timeout here — practicing "configure it small
-enough to observe, then actually force the failure and watch the protection engage"
-on unfamiliar code, not just trusting the annotation did something.
-
-Next up, Session 8: Cloud Run — `bootBuildImage` producing a real container image
-for each of the three services, Cloud SQL replacing local Postgres, Atlas replacing
-local MongoDB, Secret Manager for what `application-local.properties` currently
-holds in plain text. First session touching any actual cloud infrastructure — nothing
-before this point has needed anything beyond a laptop and Docker.
