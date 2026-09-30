@@ -42,12 +42,16 @@ A different kind of session, continued from `session-08-start`. Sessions 1–7 c
 all be fully built, tested, and verified by running `./gradlew build` — every piece
 of infrastructure was Docker-on-a-laptop, reproducible for anyone, verifiable by CI.
 Session 8 leaves that world: Cloud Run, Cloud SQL, Atlas, CloudAMQP, and Secret
-Manager are real external services with real accounts behind them. Everything below
-that's genuinely local — `bootBuildImage`, the Secret Manager integration's actual
-logic — was built and verified with the same rigor as every prior session. The
-actual `gcloud`/Secret Manager/Atlas/CloudAMQP commands are documented precisely but
-were not run by whoever last touched this file — they need real credentials this
-repo's automation doesn't have.
+Manager are real external services with real accounts behind them. Unlike the
+earlier version of this section, every command below — provisioning Atlas/CloudAMQP/
+Cloud SQL, creating the Secret Manager entries, and the actual
+`bootBuildImage` → Artifact Registry → `gcloud run deploy` → `gcloud run
+worker-pools deploy` path — was genuinely run against a real GCP project this
+session, not just documented. It took ten real, distinct failures to get a clean
+end-to-end booking confirmed over a real RabbitMQ broker; every one of them is
+recorded below as a finding, not smoothed over. That gap between "the plan reads
+correctly" and "the plan survives contact with a real cloud account" is itself the
+Session 8 lesson — see **Real findings from actually running this**, below.
 
 **Background, unchanged from `session-08-start`:** `spring-cloud-gcp-starter-secretmanager`
 doesn't support Spring Boot 4 (a confirmed, open incompatibility, not a missing
@@ -77,9 +81,15 @@ its own logs; `notification-service`'s was detected by the buildpack itself as a
 genuinely fits a Cloud Run Worker Pool rather than a normal HTTP service.
 
 **`GcpSecretsEnvironmentPostProcessor`, in `shared`, replacing the broken starter:**
-runs only on the `cloud` profile, only if `GOOGLE_CLOUD_PROJECT` is set (the
-standard env var Cloud Run itself provides automatically at runtime — nothing to
-configure for that part), only if `gcp.secrets.mappings.*` properties exist. Each
+runs only on the `cloud` profile, only if `GOOGLE_CLOUD_PROJECT` is set, only if
+`gcp.secrets.mappings.*` properties exist. **Correction from the previous version of
+this section:** `GOOGLE_CLOUD_PROJECT` is *not* auto-injected by Cloud Run for a
+regular service or worker pool — that was a wrong assumption, confirmed both by
+actually deploying without it (the post-processor silently no-opped, `datasource.url`
+came back unset) and by the runtime contract docs (only Cloud Run *functions* get a
+handful of auto-set vars; services and worker pools do not). It has to be passed
+explicitly on every `gcloud run deploy`/`gcloud run worker-pools deploy` via
+`--set-env-vars`, every time — see **Real findings**, below. Each
 mapping's key is a Secret Manager secret name, its value the Spring property key the
 fetched secret becomes — e.g.
 `gcp.secrets.mappings.cloud-sql-jdbc-url=spring.datasource.url`. Every secret this
@@ -127,10 +137,17 @@ alpha`/`beta` in some documentation).
 
 ```
 gcloud sql instances create ticketing-shared --database-version=POSTGRES_17 \
-  --tier=db-f1-micro --region=europe-central2
+  --tier=db-f1-micro --region=europe-central2 --edition=ENTERPRISE
 gcloud sql databases create ticketing_<student> --instance=ticketing-shared
 gcloud sql users create <student> --instance=ticketing-shared --password=<...>
 ```
+
+`--edition=ENTERPRISE` is not optional, confirmed by actually running this without
+it: `gcloud` now defaults new Cloud SQL instances to the Enterprise Plus edition,
+and `db-f1-micro` (the cheap shared-core tier this whole setup depends on) only
+exists under plain Enterprise. Omitting the flag fails immediately with `Invalid
+Tier (db-f1-micro) for (ENTERPRISE_PLUS) Edition` — first error of the session, and
+a one-flag fix.
 
 Delete the same day the session ends — `gcloud sql instances delete ticketing-shared`.
 
@@ -144,47 +161,158 @@ Delete the same day the session ends — `gcloud sql instances delete ticketing-
 # CloudAMQP — cloudamqp.com > Create New Instance > Little Lemur (Free), copy the AMQP URL.
 
 gcloud secrets create cloud-sql-jdbc-url --data-file=- <<< \
-  "jdbc:postgresql:///ticketing_<student>?cloudSqlInstance=<PROJECT>:europe-central2:ticketing-shared&socketFactory=com.google.cloud.sql.postgres.SocketFactory&user=<student>&password=<...>"
+  "jdbc:postgresql:///ticketing_<student>?cloudSqlInstance=<PROJECT>:europe-central2:ticketing-shared&socketFactory=com.google.cloud.sql.postgres.SocketFactory&user=<student>&password=<...>&sslmode=disable"
 gcloud secrets create atlas-uri --data-file=- <<< "mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/ticketing"
 gcloud secrets create cloudamqp-uri --data-file=- <<< "<the amqps:// URL CloudAMQP gave you>"
 
-# The Cloud Run service's own service account needs read access to each secret:
+# The Cloud Run service's own service account needs read access to each secret —
+# roles/editor (what the default compute SA has by default) does NOT cover this,
+# confirmed by hitting PERMISSION_DENIED on secretmanager.versions.access with a
+# real deploy. Grant it explicitly, every time:
 gcloud secrets add-iam-policy-binding cloud-sql-jdbc-url \
   --member="serviceAccount:<PROJECT_NUMBER>-compute@developer.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
 # (repeat for atlas-uri, cloudamqp-uri)
+gcloud projects add-iam-policy-binding <PROJECT> \
+  --member="serviceAccount:<PROJECT_NUMBER>-compute@developer.gserviceaccount.com" \
+  --role="roles/cloudsql.client"
 
-./gradlew :core-app:bootBuildImage :payment-service:bootBuildImage
+./gradlew :core-app:bootBuildImage :payment-service:bootBuildImage :notification-service:bootBuildImage
 docker tag ticketing/payment-service europe-central2-docker.pkg.dev/<PROJECT>/ticketing/payment-service
 docker push europe-central2-docker.pkg.dev/<PROJECT>/ticketing/payment-service
-gcloud run deploy payment-service --image europe-central2-docker.pkg.dev/<PROJECT>/ticketing/payment-service --region europe-central2
+gcloud run deploy payment-service --image europe-central2-docker.pkg.dev/<PROJECT>/ticketing/payment-service \
+  --region europe-central2 --allow-unauthenticated --memory=1Gi
 
 docker tag ticketing/core-app europe-central2-docker.pkg.dev/<PROJECT>/ticketing/core-app
 docker push europe-central2-docker.pkg.dev/<PROJECT>/ticketing/core-app
 gcloud run deploy core-app --image europe-central2-docker.pkg.dev/<PROJECT>/ticketing/core-app \
-  --region europe-central2 --add-cloudsql-instances=<PROJECT>:europe-central2:ticketing-shared \
-  --set-env-vars=SPRING_PROFILES_ACTIVE=cloud,PAYMENT_SERVICE_URL=<payment-service's own Cloud Run URL>
+  --region europe-central2 --allow-unauthenticated --memory=1Gi \
+  --add-cloudsql-instances=<PROJECT>:europe-central2:ticketing-shared \
+  --set-env-vars=SPRING_PROFILES_ACTIVE=cloud,GOOGLE_CLOUD_PROJECT=<PROJECT>,PAYMENT_SERVICE_URL=<payment-service's own Cloud Run URL>
 
 # notification-service — a Worker Pool, not a normal service: no HTTP ingress,
 # matches what bootBuildImage's own buildpack detection already confirmed locally.
-./gradlew :notification-service:bootBuildImage
+# `gcloud run worker-pools` needs the grpc Python module locally — see Real
+# findings below if this fails with "No module named 'grpc'".
 docker tag ticketing/notification-service europe-central2-docker.pkg.dev/<PROJECT>/ticketing/notification-service
 docker push europe-central2-docker.pkg.dev/<PROJECT>/ticketing/notification-service
 gcloud run worker-pools deploy notification-service \
   --image europe-central2-docker.pkg.dev/<PROJECT>/ticketing/notification-service \
-  --region europe-central2 --set-env-vars=SPRING_PROFILES_ACTIVE=cloud
+  --region europe-central2 --memory=1Gi \
+  --set-env-vars=SPRING_PROFILES_ACTIVE=cloud,GOOGLE_CLOUD_PROJECT=<PROJECT>
 ```
 
-**Verify it, end to end:** `curl` a real booking against `core-app`'s Cloud Run URL,
-watch `payment-service`'s logs show the charge, watch `notification-service`'s Worker
-Pool logs show the RabbitMQ message actually arriving from a broker none of this ever
-touched locally.
+### Real findings from actually running this
+
+Ten distinct, real failures between a clean `gcloud sql instances create` and a
+confirmed booking notification arriving over a real RabbitMQ broker. Each one
+genuinely reproduced, diagnosed from the actual error, then fixed — not
+anticipated in advance. Session 8's real lesson isn't any one of these, it's that
+there were this many: cloud deployment fails in layers, and each layer's error
+message points at the next one, not all of them at once.
+
+1. **`gcloud sql instances create` defaults to the wrong edition.** Covered above —
+   `--edition=ENTERPRISE` required for `db-f1-micro` to be a valid tier at all.
+2. **`spring.data.mongodb.uri` is dead, not just old.** Spring Boot 4.0 split Mongo
+   config into a plain-client module (`spring.mongodb.*`) and a Spring-Data-only
+   module (`spring.data.mongodb.*`, now just repository/GridFS settings). The old
+   connection properties (`uri`, `host`, `username`, `password`, `ssl.*`) are
+   deprecated at **error** level, confirmed directly against the jar's own
+   `spring-configuration-metadata.json` — meaning they don't bind at all, not just
+   warn. `gcp.secrets.mappings.atlas-uri` must map to `spring.mongodb.uri`.
+3. **Hibernate logs the raw JDBC URL, credentials included, at INFO.** The
+   `HHH10001005` connection-info diagnostic (`org.hibernate.orm.connections.pooling`
+   logger) prints whatever's in the URL — including an embedded password, when the
+   URL has one, which Cloud SQL's socket-factory URL does. Suppressed with
+   `logging.level.org.hibernate.orm.connections.pooling=WARN` in
+   `core-app/src/main/resources/application.properties`, before this ever reached
+   real Cloud Logging.
+4. **`GOOGLE_CLOUD_PROJECT` is not auto-injected by Cloud Run.** Corrected above —
+   must be passed explicitly via `--set-env-vars` on every deploy.
+5. **A hardcoded `server.port` fails Cloud Run's startup probe.**
+   `payment-service` hardcoded `server.port=8081`; Cloud Run injects the real
+   listen port via the `PORT` env var (8080 by default) and health-checks exactly
+   that port — the app never opened it, so the deploy failed with *"container
+   failed to start and listen on the port defined by PORT=8080"*. Fixed the same
+   way in all three services for consistency, not just the one that broke:
+   `server.port=${PORT:8081}` (and `:8080`/`:8082` for `core-app`/
+   `notification-service`) — falls back to the old local default when `PORT` isn't
+   set, so local dev is unaffected.
+6. **Cloud Run's default memory (512Mi) is too small for the JVM's own fixed
+   overhead**, independent of anything the app does. The buildpack's memory
+   calculator reported needing 592292K just for
+   `-XX:MaxDirectMemorySize=10M -XX:MaxMetaspaceSize=80292K
+   -XX:ReservedCodeCacheSize=240M -Xss1M * 250 threads` — before any heap is
+   allocated — and refused to start. Fixed with `--memory=1Gi` on every deploy;
+   this is exactly the "JVM inside a container" theory point from this session's
+   own outline, now a real failure instead of a slide.
+7. **`roles/editor` does not include Secret Manager access.** The default Compute
+   Engine service account (what Cloud Run runs as unless told otherwise) has
+   `roles/editor`, which looks broad enough to cover this and doesn't —
+   `secretmanager.versions.access` is deliberately carved out as its own grant.
+   Confirmed by a real `PERMISSION_DENIED` on first deploy; fixed with an explicit
+   `secretmanager.secretAccessor` binding per secret (command above). The same
+   account was also missing `roles/cloudsql.client` outright — grant both up
+   front rather than discovering the second one on a second failed deploy.
+8. **The Cloud SQL Java Connector and pgjdbc fight each other over SSL.** The
+   socket factory already wraps the connection in its own encrypted,
+   mutually-authenticated tunnel; when pgjdbc *also* tries to negotiate its own
+   SSL handshake on top, the extra negotiation gets an unexpected `EOFException`
+   mid-handshake. Fix is `sslmode=disable` in the JDBC URL — the name is
+   misleading, it only disables the driver's *own* redundant SSL layer, the
+   connection is still fully encrypted by the connector itself. See
+   [the connector's own docs](https://github.com/GoogleCloudPlatform/cloud-sql-jdbc-socket-factory/blob/main/docs/jdbc.md)
+   and [confirming GitHub issue](https://github.com/GoogleCloudPlatform/cloud-sql-jdbc-socket-factory/issues/175).
+9. **`gcloud run worker-pools` needs a Python `grpc` module gcloud doesn't bundle
+   by default on Windows**, failing with `No module named 'grpc'` before the
+   command even runs. `gcloud`'s own error message suggests `pip3 install grpc` —
+   that's the wrong package; the real one is `grpcio`. Beyond that,
+   `CLOUDSDK_PYTHON_SITEPACKAGES=1` also has to be set, or gcloud's Python runs
+   with `-S` (skip site-packages) and ignores the installed module anyway. Two-part
+   local fix, per machine, once: `python -m pip install grpcio grpcio-status` then
+   `export CLOUDSDK_PYTHON_SITEPACKAGES=1` (and `export CLOUDSDK_PYTHON=<path>` if
+   multiple Pythons are on `PATH` and gcloud resolves the wrong one — it uses
+   Windows' native `where python`, which can differ from what a POSIX shell's
+   `which` reports).
+10. **Locally-tuned Resilience4j timeouts are too aggressive for a real
+    cross-service cold start.** `payment-service.connect-timeout=1s`/
+    `read-timeout=2s` (`core-app/src/main/resources/application.properties:20-27`)
+    are deliberately tight for an instant local demo. Against real Cloud Run,
+    the first booking after `payment-service` scaled to zero returned a 503
+    (`Payment service is currently unavailable`) — the timeout gave up before
+    the ~4.4s cold start finished. A second, identical request succeeded
+    immediately once the instance was warm. Not fixed in code this session —
+    it's a live demonstration of exactly the Session 8 stretch goal ("measure
+    cold starts with min instances 0 vs 1"), left as a deliberate teaching
+    moment rather than papered over with a longer timeout.
+
+**Confirmed working end to end**, for real, after all of the above: `core-app`
+deployed to Cloud Run, connected to real Cloud SQL and real Atlas via Secret
+Manager; a booking created over its public URL published a real message to
+CloudAMQP; `notification-service`'s Worker Pool picked it up and logged
+`Notification: booking 1 confirmed for Ada Lovelace — 2 seat(s) on event 2` —
+visible in real Cloud Logging, not a local console.
+
+**Everything was torn down after verifying** — `core-app`/`payment-service`
+services deleted, the `notification-service` Worker Pool deleted, the Cloud SQL
+instance stopped (`--activation-policy=NEVER`, not deleted — data and setup
+preserved for next time). See **Teardown**, below, for the commands.
 
 **Teardown — an explicit lab step, not an afterthought:**
 
 ```
-gcloud run services delete core-app payment-service --region europe-central2
+# services delete only takes one name at a time — confirmed by
+# `gcloud run services delete core-app payment-service` failing with
+# "unrecognized arguments", run separately:
+gcloud run services delete core-app --region europe-central2
+gcloud run services delete payment-service --region europe-central2
 gcloud run worker-pools delete notification-service --region europe-central2
+
+# Cloud SQL: stop between sessions rather than delete, to keep the database and
+# not have to recreate it — deleting drops the data, stopping doesn't:
+gcloud sql instances patch ticketing-shared --activation-policy=NEVER
+# (only delete it outright at the very end of the course: gcloud sql instances delete ticketing-shared)
+
 gcloud secrets delete cloud-sql-jdbc-url atlas-uri cloudamqp-uri
 # Atlas: Project > Clusters > ... > Terminate. CloudAMQP: Instance > Delete.
 ```
