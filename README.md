@@ -108,7 +108,7 @@ real GCP call, no network needed.
 dependency already uses — `spring.datasource.url` (with
 `com.google.cloud.sql:postgres-socket-factory` added as a `runtimeOnly` dependency,
 loaded reflectively by the JDBC driver via the URL's own `socketFactory=` parameter,
-no direct import anywhere in this codebase), `spring.data.mongodb.uri`,
+no direct import anywhere in this codebase), `spring.mongodb.uri`,
 `spring.rabbitmq.addresses` (confirmed directly against `RabbitProperties`' own
 parsing code that it genuinely accepts a full `amqps://user:pass@host/vhost` URI as
 one address, not just bare `host:port` pairs). `spring.docker.compose.enabled=false`

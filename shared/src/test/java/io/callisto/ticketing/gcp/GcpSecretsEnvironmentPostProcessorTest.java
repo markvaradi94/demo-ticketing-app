@@ -58,14 +58,14 @@ class GcpSecretsEnvironmentPostProcessorTest {
 	void fetchesAndExposesEachMappedSecret() {
 		MockEnvironment environment = cloudEnvironment();
 		environment.setProperty("gcp.secrets.mappings.cloud-sql-jdbc-url", "spring.datasource.url");
-		environment.setProperty("gcp.secrets.mappings.atlas-uri", "spring.data.mongodb.uri");
+		environment.setProperty("gcp.secrets.mappings.atlas-uri", "spring.mongodb.uri");
 		GcpSecretsEnvironmentPostProcessor postProcessor = postProcessor("project-1");
 
 		postProcessor.postProcessEnvironment(environment, null);
 
 		assertThat(fetchedSecretNames).containsExactlyInAnyOrder("cloud-sql-jdbc-url", "atlas-uri");
 		assertThat(environment.getProperty("spring.datasource.url")).isEqualTo("value-of-cloud-sql-jdbc-url");
-		assertThat(environment.getProperty("spring.data.mongodb.uri")).isEqualTo("value-of-atlas-uri");
+		assertThat(environment.getProperty("spring.mongodb.uri")).isEqualTo("value-of-atlas-uri");
 	}
 
 	private static MockEnvironment cloudEnvironment() {
