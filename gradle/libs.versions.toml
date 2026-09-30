@@ -4,6 +4,7 @@ spring-dependency-management = "1.1.7"
 testcontainers = "2.0.5"
 spring-modulith = "2.1.1"
 archunit = "1.5.1"
+resilience4j = "2.4.0"
 
 [libraries]
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
@@ -11,6 +12,7 @@ testcontainers-mongodb = { module = "org.testcontainers:testcontainers-mongodb",
 spring-modulith-starter-core = { module = "org.springframework.modulith:spring-modulith-starter-core", version.ref = "spring-modulith" }
 spring-modulith-starter-test = { module = "org.springframework.modulith:spring-modulith-starter-test", version.ref = "spring-modulith" }
 archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
+resilience4j-spring-boot4 = { module = "io.github.resilience4j:resilience4j-spring-boot4", version.ref = "resilience4j" }
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
