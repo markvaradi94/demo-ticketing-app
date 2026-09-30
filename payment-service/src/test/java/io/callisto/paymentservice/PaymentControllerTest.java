@@ -30,7 +30,7 @@ class PaymentControllerTest {
 
 	@Test
 	void approvesASmallPayment() throws Exception {
-		PaymentRequest request = new PaymentRequest(1L, new BigDecimal("50.00"));
+		PaymentRequest request = new PaymentRequest("ref-1", new BigDecimal("50.00"));
 
 		mockMvc.perform(post("/payments")
 						.contentType(MediaType.APPLICATION_JSON)
@@ -41,7 +41,7 @@ class PaymentControllerTest {
 
 	@Test
 	void declinesALargePayment() throws Exception {
-		PaymentRequest request = new PaymentRequest(1L, new BigDecimal("2500.00"));
+		PaymentRequest request = new PaymentRequest("ref-2", new BigDecimal("2500.00"));
 
 		mockMvc.perform(post("/payments")
 						.contentType(MediaType.APPLICATION_JSON)

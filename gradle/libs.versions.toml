@@ -9,6 +9,7 @@ resilience4j = "2.4.0"
 [libraries]
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
 testcontainers-mongodb = { module = "org.testcontainers:testcontainers-mongodb", version.ref = "testcontainers" }
+testcontainers-rabbitmq = { module = "org.testcontainers:testcontainers-rabbitmq", version.ref = "testcontainers" }
 spring-modulith-starter-core = { module = "org.springframework.modulith:spring-modulith-starter-core", version.ref = "spring-modulith" }
 spring-modulith-starter-test = { module = "org.springframework.modulith:spring-modulith-starter-test", version.ref = "spring-modulith" }
 archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }

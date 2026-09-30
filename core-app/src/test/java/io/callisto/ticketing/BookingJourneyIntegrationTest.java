@@ -2,6 +2,8 @@ package io.callisto.ticketing;
 
 import io.callisto.ticketing.booking.adapter.in.web.dto.BookingRequest;
 import io.callisto.ticketing.booking.adapter.in.web.dto.BookingResponse;
+import io.callisto.ticketing.booking.application.port.out.BookingEventPublisherPort;
+import io.callisto.ticketing.booking.application.port.out.PaymentPort;
 import io.callisto.ticketing.catalog.dto.EventRequest;
 import io.callisto.ticketing.catalog.dto.EventResponse;
 import org.junit.jupiter.api.Test;
@@ -12,6 +14,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -26,6 +29,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * kept to one broad happy-path journey rather than every edge case; those are the
  * controller and persistence layers' job. This is the expensive top of the testing
  * pyramid, used sparingly on purpose.
+ *
+ * {@link PaymentPort} and {@link BookingEventPublisherPort} are both mocked, not
+ * real — payment-service and RabbitMQ are separate infrastructure this test suite
+ * doesn't start (unlike Postgres/Mongo, neither is Testcontainers-managed here). A
+ * real cross-service contract test is out of scope for this course; the actual
+ * payment and messaging integrations are verified live, against everything
+ * genuinely running, in session 7's own lesson. Both mocks default to succeeding
+ * silently (an approved charge, a no-op publish), matching real behavior for what
+ * every test below actually does.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureTestRestTemplate
@@ -33,6 +45,12 @@ class BookingJourneyIntegrationTest extends AbstractIntegrationTest {
 
 	@Autowired
 	private TestRestTemplate rest;
+
+	@MockitoBean
+	private PaymentPort payments;
+
+	@MockitoBean
+	private BookingEventPublisherPort bookingEvents;
 
 	@Test
 	void createsBooksFetchesAndCancelsAcrossTheWholeStack() {

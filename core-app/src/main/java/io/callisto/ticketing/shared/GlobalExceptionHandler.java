@@ -3,14 +3,17 @@ package io.callisto.ticketing.shared;
 import io.callisto.ticketing.booking.BookingAlreadyCancelledException;
 import io.callisto.ticketing.booking.BookingNotFoundException;
 import io.callisto.ticketing.booking.OverbookingException;
+import io.callisto.ticketing.booking.PaymentDeclinedException;
 import io.callisto.ticketing.booking.TooManySeatsRequestedException;
 import io.callisto.ticketing.catalog.EventNotFoundException;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.client.ResourceAccessException;
 
 import java.util.List;
 
@@ -35,6 +38,21 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(OverbookingException.class)
 	public ProblemDetail handleOverbooking(OverbookingException exception) {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+	}
+
+	@ExceptionHandler(PaymentDeclinedException.class)
+	public ProblemDetail handlePaymentDeclined(PaymentDeclinedException exception) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.PAYMENT_REQUIRED, exception.getMessage());
+	}
+
+	// Both reach here only after @Retry has already exhausted its attempts —
+	// CallNotPermittedException when the circuit breaker is open and refusing to
+	// even try, ResourceAccessException when payment-service's read timeout was hit
+	// on every attempt. Different causes, same honest answer to the client: the
+	// dependency isn't available right now, try again later.
+	@ExceptionHandler({CallNotPermittedException.class, ResourceAccessException.class})
+	public ProblemDetail handlePaymentUnavailable(Exception exception) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, "Payment service is currently unavailable — try again shortly.");
 	}
 
 	@ExceptionHandler(ObjectOptimisticLockingFailureException.class)

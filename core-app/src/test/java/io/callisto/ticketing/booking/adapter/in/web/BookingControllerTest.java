@@ -2,6 +2,7 @@ package io.callisto.ticketing.booking.adapter.in.web;
 
 import io.callisto.ticketing.booking.BookingAlreadyCancelledException;
 import io.callisto.ticketing.booking.BookingNotFoundException;
+import io.callisto.ticketing.booking.PaymentDeclinedException;
 import io.callisto.ticketing.booking.TooManySeatsRequestedException;
 import io.callisto.ticketing.booking.adapter.in.web.dto.BookingRequest;
 import io.callisto.ticketing.booking.application.BookingService;
@@ -97,6 +98,16 @@ class BookingControllerTest {
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(objectMapper.writeValueAsBytes(new BookingRequest("Margaret Hamilton", 50))))
 				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void rejectsADeclinedPayment() throws Exception {
+		when(bookings.create(any(Booking.class))).thenThrow(new PaymentDeclinedException("ref-1"));
+
+		mockMvc.perform(post("/events/" + EVENT_ID + "/bookings")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsBytes(new BookingRequest("Ada Lovelace", 2))))
+				.andExpect(status().isPaymentRequired());
 	}
 
 	@Test

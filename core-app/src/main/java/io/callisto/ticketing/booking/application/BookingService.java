@@ -3,32 +3,42 @@ package io.callisto.ticketing.booking.application;
 import io.callisto.ticketing.booking.BookingAlreadyCancelledException;
 import io.callisto.ticketing.booking.BookingNotFoundException;
 import io.callisto.ticketing.booking.TooManySeatsRequestedException;
+import io.callisto.ticketing.booking.application.port.out.BookingEventPublisherPort;
 import io.callisto.ticketing.booking.application.port.out.BookingRepositoryPort;
 import io.callisto.ticketing.booking.application.port.out.EventAvailabilityPort;
+import io.callisto.ticketing.booking.application.port.out.PaymentPort;
 import io.callisto.ticketing.booking.domain.Booking;
 import io.callisto.ticketing.booking.domain.BookingCancelled;
 import io.callisto.ticketing.booking.domain.BookingId;
 import io.callisto.ticketing.booking.domain.BookingStatus;
 import io.callisto.ticketing.booking.domain.SeatCount;
+import io.callisto.ticketing.catalog.EventClient;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.util.UUID;
 
 // Public — adapter.in.web.BookingController is a different package now that the
 // hexagonal split is real, not just a compiler-enforced convention within one flat
 // package the way session 4 left it.
 //
-// Depends only on the two outbound ports now, not on any adapter.* type or on
-// catalog directly — BookingArchitectureTests enforces that with an ArchUnit
-// layeredArchitecture() rule. EventAvailabilityPort's adapter reaches
-// catalog.EventRepository directly to read *and mutate* bookedSeats, but the
-// no-overbooking invariant itself now lives on the EventInventory aggregate.
+// Depends on the three outbound ports, not on any adapter.* type directly —
+// BookingArchitectureTests enforces that with an ArchUnit layeredArchitecture()
+// rule. EventClient is different: it's catalog's own narrow, purpose-built public
+// client (session 4), used directly the same way ReviewService already does for
+// nameOf() — not every cross-module read needs a booking-owned port, only the ones
+// wrapping an actual adapter-layer external system.
 @Service
 @RequiredArgsConstructor
 public class BookingService {
 
 	private final BookingRepositoryPort bookings;
 	private final EventAvailabilityPort events;
+	private final PaymentPort payments;
+	private final BookingEventPublisherPort bookingEvents;
+	private final EventClient eventClient;
 	private final BookingProperties bookingProperties;
 	private final ApplicationEventPublisher eventPublisher;
 
@@ -37,9 +47,22 @@ public class BookingService {
 			throw new TooManySeatsRequestedException(newBooking.getSeatCount(), bookingProperties.maxSeatsPerBooking());
 		}
 
-		events.reserveSeats(newBooking.getEventId(), SeatCount.of(newBooking.getSeatCount()));
+		SeatCount seatCount = SeatCount.of(newBooking.getSeatCount());
+		events.reserveSeats(newBooking.getEventId(), seatCount);
 
-		return bookings.save(newBooking);
+		BigDecimal amount = eventClient.pricePerSeat(newBooking.getEventId()).multiply(BigDecimal.valueOf(newBooking.getSeatCount()));
+		try {
+			payments.charge(UUID.randomUUID().toString(), amount);
+		} catch (RuntimeException e) {
+			// Seats were already reserved above — undo that before letting the
+			// failure propagate, same releaseSeats() session 6 built for cancel().
+			events.releaseSeats(newBooking.getEventId(), seatCount);
+			throw e;
+		}
+
+		Booking saved = bookings.save(newBooking);
+		bookingEvents.publishCreated(saved);
+		return saved;
 	}
 
 	public Booking get(Long eventId, BookingId bookingId) {
@@ -54,7 +77,11 @@ public class BookingService {
 		}
 
 		Booking cancelled = bookings.save(booking.toBuilder().status(BookingStatus.CANCELLED).build());
+		// Two independent reactions to the same moment, through two different
+		// mechanisms: the in-JVM ApplicationEvent (session 6) releases seats within
+		// core-app itself; publishCancelled (this session) tells the outside world.
 		eventPublisher.publishEvent(new BookingCancelled(cancelled.getEventId(), SeatCount.of(cancelled.getSeatCount())));
+		bookingEvents.publishCancelled(cancelled);
 		return cancelled;
 	}
 
