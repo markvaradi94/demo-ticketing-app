@@ -15,6 +15,11 @@ dependencies {
 	implementation(libs.spring.modulith.starter.core)
 	implementation(libs.resilience4j.spring.boot4)
 	runtimeOnly("org.postgresql:postgresql")
+	// Only actually exercised on the cloud profile — the driver-level piece that
+	// lets a plain JDBC URL (?cloudSqlInstance=...&socketFactory=...) reach Cloud
+	// SQL through the Cloud SQL Auth Proxy's connector, no separate proxy process
+	// or sidecar container needed.
+	runtimeOnly(libs.google.cloud.sql.postgres.socket.factory)
 	developmentOnly("org.springframework.boot:spring-boot-devtools")
 	developmentOnly("org.springframework.boot:spring-boot-docker-compose")
 	testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")

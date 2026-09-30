@@ -6,6 +6,7 @@ spring-modulith = "2.1.1"
 archunit = "1.5.1"
 resilience4j = "2.4.0"
 google-cloud-libraries-bom = "26.86.0"
+google-cloud-sql-postgres-socket-factory = "1.30.0"
 
 [libraries]
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
@@ -18,6 +19,7 @@ resilience4j-spring-boot4 = { module = "io.github.resilience4j:resilience4j-spri
 spring-boot-core = { module = "org.springframework.boot:spring-boot", version.ref = "spring-boot" }
 google-cloud-libraries-bom = { module = "com.google.cloud:libraries-bom", version.ref = "google-cloud-libraries-bom" }
 google-cloud-secretmanager = { module = "com.google.cloud:google-cloud-secretmanager" }
+google-cloud-sql-postgres-socket-factory = { module = "com.google.cloud.sql:postgres-socket-factory", version.ref = "google-cloud-sql-postgres-socket-factory" }
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }

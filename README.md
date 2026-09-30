@@ -8,7 +8,7 @@ history is the course.
 
 Two branches per session: `session-NN-start` is what you check out before the
 session begins, `session-NN-end` is the finished state after that session's live
-coding and lab. You are currently on **`session-08-start`**.
+coding and lab. You are currently on **`session-08-end`**.
 
 ## Prerequisites
 
@@ -36,67 +36,158 @@ builds and tests every subproject (`core-app`, `payment-service`,
 Testcontainers-backed test suite; `payment-service` and `notification-service` are
 plain, fast-booting Spring Boot apps.
 
-## Where things stand — Session 8: Cloud Run (start)
+## Where things stand — Session 8: Cloud Run (end)
 
-A different kind of session, and a different kind of `-start` branch. Sessions 1–7
-could all be fully built, tested, and verified by running `./gradlew build` — every
-piece of infrastructure was Docker-on-a-laptop, reproducible for anyone, verifiable
-by CI. Session 8 leaves that world: Cloud Run, Cloud SQL, Atlas, CloudAMQP, and
-Secret Manager are real external services with real accounts behind them. This
-branch's code diff is genuinely small — one dependency addition — because most of
-this session's actual "setup" isn't code at all, it's provisioning real accounts,
-documented below rather than committed to a branch.
+A different kind of session, continued from `session-08-start`. Sessions 1–7 could
+all be fully built, tested, and verified by running `./gradlew build` — every piece
+of infrastructure was Docker-on-a-laptop, reproducible for anyone, verifiable by CI.
+Session 8 leaves that world: Cloud Run, Cloud SQL, Atlas, CloudAMQP, and Secret
+Manager are real external services with real accounts behind them. Everything below
+that's genuinely local — `bootBuildImage`, the Secret Manager integration's actual
+logic — was built and verified with the same rigor as every prior session. The
+actual `gcloud`/Secret Manager/Atlas/CloudAMQP commands are documented precisely but
+were not run by whoever last touched this file — they need real credentials this
+repo's automation doesn't have.
 
-**A real, confirmed incompatibility, worth documenting rather than working around
-silently:** the obvious choice for Secret Manager — `spring-cloud-gcp-starter-secretmanager`
-— does not support Spring Boot 4. It's not a missing-feature gap; released versions
-(through 8.1.1) throw errors at startup from outdated `ConfigData` bootstrap
-initialization logic that hasn't been updated for Boot 4's new lifecycle, confirmed
-against this project's own open GitHub issue tracking the incompatibility. This
-course has been strict about verifying every dependency against Boot 4.1.1 before
-shipping it (Resilience4j needed the `-spring-boot4` artifact specifically, not
-`-spring-boot3`; Spring AMQP's JSON converter needed the Jackson-3-native
-`JacksonJsonMessageConverter`, not the deprecated `Jackson2` one) — this is the first
-time that check came back negative outright. Session 8 hand-rolls Secret Manager
-integration instead, using the plain `com.google.cloud:google-cloud-secretmanager`
-client directly (unaffected by the Spring starter's bootstrap-lifecycle problem,
-since it's not a Spring integration at all) via a custom `EnvironmentPostProcessor`
-— live-coding content, not baseline, see `session-08-end`'s README.
+**Background, unchanged from `session-08-start`:** `spring-cloud-gcp-starter-secretmanager`
+doesn't support Spring Boot 4 (a confirmed, open incompatibility, not a missing
+feature) — see that branch's README for the full reasoning. `shared`'s scope
+expanded to hold cross-service infrastructure, not just message contracts.
+`com.google.cloud:libraries-bom`, `google-cloud-secretmanager`, and a real
+provisioning checklist (GCP project, one shared instructor-managed Cloud SQL
+instance, per-student Atlas M0 and CloudAMQP Little Lemur) were already in place.
 
-**`shared` picks up a second kind of cross-service concern, its scope honestly
-widened:** until now it held only RabbitMQ message contracts. Both `core-app` and
-`notification-service` need the same secret-fetching mechanism on the `cloud`
-profile — genuine shared infrastructure, the same "more than one deployable needs to
-agree on or reuse" reasoning that put the message contracts there in the first
-place, just a different flavor of it. `com.google.cloud:libraries-bom` (Google's own
-BOM for aligning `google-cloud-*` artifact versions) and
-`google-cloud-secretmanager` are added now, unused — same "dependency first, code
-next session" pattern sessions 4, 5, and 7 all used for their own verification
-tools. `shared` also gains a direct `spring-boot` (core jar only, no starter, no
-Spring Boot Gradle plugin) dependency — the one jar `EnvironmentPostProcessor`'s
-interface lives in; `shared` isn't itself a bootable app, so it needs the interface,
-not the whole framework.
+### Live coding — bootBuildImage, then Secret Manager for real
 
-**Before you teach this — real provisioning, not code, and it has to happen ahead of
-time:**
+**`bootBuildImage`, configured once in `build-logic`, verified against all three
+services:** `imageName.set("ticketing/${project.name}:latest")` on the
+`BootBuildImage` task — Cloud Native Buildpacks do the rest, no Dockerfile anywhere
+in this repo. Hit one genuine, confirmed Spring Boot 4.0+ regression along the way:
+an empty Docker Hub auth entry in `~/.docker/config.json` (a normal side effect of
+using `credsStore`) makes `bootBuildImage` throw `'username' must not be null`
+instead of falling back to the credential helper the way Boot 3.5 correctly did —
+already fixed upstream, not yet in 4.1.1. `docker login` resolved it locally
+(populates a real credential the helper can use, sidestepping the broken fallback
+path entirely). Every image was built and actually run locally —
+`payment-service`'s answered real HTTP traffic standalone;
+`core-app`'s connected to real Postgres/Mongo/RabbitMQ containers over a shared
+Docker network and genuinely persisted an `Event` via `INSERT` statements visible in
+its own logs; `notification-service`'s was detected by the buildpack itself as a
+"Non-web application" — independent confirmation, from the platform, that its shape
+genuinely fits a Cloud Run Worker Pool rather than a normal HTTP service.
 
-- **A GCP project**, with billing enabled (GCP requires a card for identity
-  verification even to use Always Free services — worth saying plainly to students
-  rather than promising "no card, ever"). Cloud Run's Always Free tier (2M
-  requests/month, permanent, no trial credit needed) comfortably covers this
-  session's actual traffic.
-- **One small, shared Cloud SQL Postgres instance**, provisioned by the instructor
-  days before class — instance creation takes several minutes, real lab time nobody
-  should spend waiting. Cloud SQL has no free tier at all; this is the one piece
-  with a genuine (small, one-time, instructor-only) cost. A database/schema per
-  student on the same instance, deleted the same day the session ends.
-- **MongoDB Atlas M0** — free forever, no credit card, per student. No change from
-  how `review`'s persistence has worked since session 3; only the connection string
-  moves from local to a real cluster.
-- **CloudAMQP's "Little Lemur" plan** — free, no card, per student (1M
-  messages/month is far beyond what a lab needs). Replaces the local
-  `compose/docker-compose.yml` RabbitMQ once `core-app`/`notification-service` are
-  running somewhere that can't reach `localhost:5672` anymore.
+**`GcpSecretsEnvironmentPostProcessor`, in `shared`, replacing the broken starter:**
+runs only on the `cloud` profile, only if `GOOGLE_CLOUD_PROJECT` is set (the
+standard env var Cloud Run itself provides automatically at runtime — nothing to
+configure for that part), only if `gcp.secrets.mappings.*` properties exist. Each
+mapping's key is a Secret Manager secret name, its value the Spring property key the
+fetched secret becomes — e.g.
+`gcp.secrets.mappings.cloud-sql-jdbc-url=spring.datasource.url`. Every secret this
+app uses is a single, complete, ready-to-use connection string with credentials
+already embedded (a full JDBC URL, a full `mongodb+srv://` URI, a full `amqps://`
+URI) — the post-processor never needs to know the shape of any one dependency's
+credentials, only which property key each secret becomes.
+
+**Registered via `META-INF/spring.factories`, targeting the interface Boot 4.1
+actually uses — confirmed against the real jar, not assumed from search results:**
+`org.springframework.boot.EnvironmentPostProcessor`, not the older
+`org.springframework.boot.env.EnvironmentPostProcessor` (present in the same jar,
+still working, but the deprecated one — the two are easy to confuse, since a search
+turned up a self-contradicting summary on exactly this point; checking the actual
+4.1.1 jar's bytecode settled it). A dedicated test —
+`GcpSecretsEnvironmentPostProcessorRegistrationTest` — boots a bare `SpringApplication`
+on the `cloud` profile with no `GOOGLE_CLOUD_PROJECT` set, proving the registration
+genuinely works through Spring's real bootstrap machinery (not just a direct method
+call) and that the class cleanly no-ops when there's nothing to fetch yet.
+`GcpSecretsEnvironmentPostProcessorTest` covers the branching logic itself — which
+profile, which project id, which mappings — against a recording fake in place of the
+real GCP call, no network needed.
+
+**Cloud SQL, Atlas, and CloudAMQP wiring, all three the same shape:** a
+`gcp.secrets.mappings.*` entry mapping straight to the Spring property each
+dependency already uses — `spring.datasource.url` (with
+`com.google.cloud.sql:postgres-socket-factory` added as a `runtimeOnly` dependency,
+loaded reflectively by the JDBC driver via the URL's own `socketFactory=` parameter,
+no direct import anywhere in this codebase), `spring.data.mongodb.uri`,
+`spring.rabbitmq.addresses` (confirmed directly against `RabbitProperties`' own
+parsing code that it genuinely accepts a full `amqps://user:pass@host/vhost` URI as
+one address, not just bare `host:port` pairs). `spring.docker.compose.enabled=false`
+on the `cloud` profile too — nothing to auto-start once real connection strings are
+in play, and no Docker daemon exists inside a Cloud Run container to run Compose
+against anyway.
+
+### Deploying for real — commands, not code
+
+Everything below is real `gcloud`/`psql`/dashboard work against real accounts —
+verify current flag names against `--help` at teaching time, especially for Worker
+Pools (a feature roughly five months old as of this session, still under `gcloud
+alpha`/`beta` in some documentation).
+
+**One-time, instructor, before class:**
+
+```
+gcloud sql instances create ticketing-shared --database-version=POSTGRES_17 \
+  --tier=db-f1-micro --region=europe-central2
+gcloud sql databases create ticketing_<student> --instance=ticketing-shared
+gcloud sql users create <student> --instance=ticketing-shared --password=<...>
+```
+
+Delete the same day the session ends — `gcloud sql instances delete ticketing-shared`.
+
+**Per student, in class:**
+
+```
+# Atlas — via the web console: Project > Create Cluster > M0 (Free), then
+# Database Access > Add New Database User, Network Access > Allow Access from Anywhere
+# (fine for a single-session lab; not a production posture).
+
+# CloudAMQP — cloudamqp.com > Create New Instance > Little Lemur (Free), copy the AMQP URL.
+
+gcloud secrets create cloud-sql-jdbc-url --data-file=- <<< \
+  "jdbc:postgresql:///ticketing_<student>?cloudSqlInstance=<PROJECT>:europe-central2:ticketing-shared&socketFactory=com.google.cloud.sql.postgres.SocketFactory&user=<student>&password=<...>"
+gcloud secrets create atlas-uri --data-file=- <<< "mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/ticketing"
+gcloud secrets create cloudamqp-uri --data-file=- <<< "<the amqps:// URL CloudAMQP gave you>"
+
+# The Cloud Run service's own service account needs read access to each secret:
+gcloud secrets add-iam-policy-binding cloud-sql-jdbc-url \
+  --member="serviceAccount:<PROJECT_NUMBER>-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+# (repeat for atlas-uri, cloudamqp-uri)
+
+./gradlew :core-app:bootBuildImage :payment-service:bootBuildImage
+docker tag ticketing/payment-service europe-central2-docker.pkg.dev/<PROJECT>/ticketing/payment-service
+docker push europe-central2-docker.pkg.dev/<PROJECT>/ticketing/payment-service
+gcloud run deploy payment-service --image europe-central2-docker.pkg.dev/<PROJECT>/ticketing/payment-service --region europe-central2
+
+docker tag ticketing/core-app europe-central2-docker.pkg.dev/<PROJECT>/ticketing/core-app
+docker push europe-central2-docker.pkg.dev/<PROJECT>/ticketing/core-app
+gcloud run deploy core-app --image europe-central2-docker.pkg.dev/<PROJECT>/ticketing/core-app \
+  --region europe-central2 --add-cloudsql-instances=<PROJECT>:europe-central2:ticketing-shared \
+  --set-env-vars=SPRING_PROFILES_ACTIVE=cloud,PAYMENT_SERVICE_URL=<payment-service's own Cloud Run URL>
+
+# notification-service — a Worker Pool, not a normal service: no HTTP ingress,
+# matches what bootBuildImage's own buildpack detection already confirmed locally.
+./gradlew :notification-service:bootBuildImage
+docker tag ticketing/notification-service europe-central2-docker.pkg.dev/<PROJECT>/ticketing/notification-service
+docker push europe-central2-docker.pkg.dev/<PROJECT>/ticketing/notification-service
+gcloud run worker-pools deploy notification-service \
+  --image europe-central2-docker.pkg.dev/<PROJECT>/ticketing/notification-service \
+  --region europe-central2 --set-env-vars=SPRING_PROFILES_ACTIVE=cloud
+```
+
+**Verify it, end to end:** `curl` a real booking against `core-app`'s Cloud Run URL,
+watch `payment-service`'s logs show the charge, watch `notification-service`'s Worker
+Pool logs show the RabbitMQ message actually arriving from a broker none of this ever
+touched locally.
+
+**Teardown — an explicit lab step, not an afterthought:**
+
+```
+gcloud run services delete core-app payment-service --region europe-central2
+gcloud run worker-pools delete notification-service --region europe-central2
+gcloud secrets delete cloud-sql-jdbc-url atlas-uri cloudamqp-uri
+# Atlas: Project > Clusters > ... > Terminate. CloudAMQP: Instance > Delete.
+```
 
 ## Testing strategy — all four layers, explicitly
 
@@ -112,7 +203,17 @@ approve/decline paths only — the 5-second slow path is real production behavio
 demoed live rather than paid for in every test run). `notification-service` adds
 `BookingEventsListenerTest` (plain JUnit, the idempotency dedup logic — no broker
 needed) and `BookingEventsListenerIntegrationTest` (the real-broker proof, described
-above).
+above). `shared`, previously untested, gains its first two:
+`GcpSecretsEnvironmentPostProcessorTest` (plain JUnit, the branching logic, a
+recording fake standing in for the real GCP call) and
+`GcpSecretsEnvironmentPostProcessorRegistrationTest` (a bare `SpringApplication`,
+proving `META-INF/spring.factories` registration genuinely works through Spring's
+real bootstrap machinery, not just a direct method call) — `shared` needed its own
+JUnit/AssertJ/`spring-test` dependencies for the first time this session,
+version-managed by importing the Spring Boot BOM directly (`io.spring.dependency-management`
+alone, not the full Spring Boot Gradle plugin — inappropriate for a plain library),
+moved into the base `ticketing.java-conventions` plugin so every module gets
+consistent versions, not just the three bootable ones.
 
 | Layer | Example | Tool | Database? |
 |---|---|---|---|
@@ -188,3 +289,30 @@ on both sides: the integration test now deletes what it created, and the reposit
 test no longer trusts the shared table to contain only its own rows — it filters
 `findAll()`'s result down to the ids it just saved before asserting on it.
 
+## Homework
+
+A standalone exercise, not a change to this repo. Take any small Spring Boot project
+(a fresh one is fine — a single controller and a database is enough) and:
+
+1. Add `bootBuildImage` support to it — no Dockerfile, just the Spring Boot Gradle
+   plugin's built-in task — and confirm the resulting image actually boots locally
+   via `docker run`, the same way every image in this session was verified before
+   anything real was deployed.
+2. Pick one piece of config your project currently keeps in plain text (a database
+   password, an API key) and move it to a real secret store — Secret Manager if
+   you're on GCP, otherwise whatever your cloud provider's equivalent is. Write the
+   fetch logic yourself against the plain client library rather than reaching for
+   the first framework integration you find, and confirm it actually works before
+   trusting it — the same discipline this session applied when the obvious Spring
+   starter turned out to be broken on this project's Boot version.
+
+Same mechanic as this session's own real finding — `spring-cloud-gcp-starter-secretmanager`
+looked like the obvious choice and wasn't, confirmed by trying it, not by assuming a
+popular library must be fine. Practicing "verify the dependency actually works
+before building on it" on unfamiliar infrastructure, not just unfamiliar code.
+
+Next up, Session 9: GKE — provided Kubernetes manifests (not hand-written; reading
+and adapting them is the skill, not authoring YAML from scratch), a Horizontal Pod
+Autoscaler, and break-and-fix labs against a real cluster. The first session where
+"more than one instance of a service running at once" is something students
+genuinely observe, not just reason about.

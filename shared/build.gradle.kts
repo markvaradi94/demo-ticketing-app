@@ -10,13 +10,15 @@ dependencies {
 	// expansion, not scope creep: still "things more than one deployable needs to
 	// agree on or reuse," just a second flavor of it.
 	//
-	// spring-boot (not a starter, and no Spring Boot Gradle plugin applied here) —
-	// shared is a plain library, not itself a bootable app; this is just the one
-	// jar EnvironmentPostProcessor's interface lives in. No io.spring.dependency-management
-	// plugin is applied either, so the version is pinned explicitly via the
-	// catalog's spring-boot ref rather than BOM-resolved, to stay in lockstep with
-	// every other module's Boot version.
+	// spring-boot (not a starter) — shared is a plain library, not itself a
+	// bootable app; this is just the one jar EnvironmentPostProcessor's interface
+	// lives in.
 	implementation(libs.spring.boot.core)
 	implementation(platform(libs.google.cloud.libraries.bom))
 	implementation(libs.google.cloud.secretmanager)
+
+	testImplementation("org.junit.jupiter:junit-jupiter")
+	testImplementation("org.assertj:assertj-core")
+	testImplementation("org.springframework:spring-test")
+	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
