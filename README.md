@@ -8,7 +8,7 @@ history is the course.
 
 Two branches per session: `session-NN-start` is what you check out before the
 session begins, `session-NN-end` is the finished state after that session's live
-coding and lab. You are currently on **`session-08-end`**.
+coding and lab. You are currently on **`session-09-start`**.
 
 ## Prerequisites
 
@@ -316,6 +316,47 @@ gcloud sql instances patch ticketing-shared --activation-policy=NEVER
 gcloud secrets delete cloud-sql-jdbc-url atlas-uri cloudamqp-uri
 # Atlas: Project > Clusters > ... > Terminate. CloudAMQP: Instance > Delete.
 ```
+
+## Where things stand — Session 9: GKE (start)
+
+Branched from `session-08-end` with no code changes — this session's content
+is entirely new: `k8s/`, a full set of Kubernetes manifests for all three
+services, targeting the same instructor GCP project and Artifact Registry
+images Session 8 already built. Full detail, including the one-time cluster
+setup and per-student secret-creation commands, lives in `k8s/README.md`
+rather than duplicated here.
+
+The one real design decision worth calling out: Session 8 authenticated to
+Cloud SQL via a JDBC `socketFactory` URL embedded with credentials. This
+session switches to the standard GKE pattern instead — the Cloud SQL Auth
+Proxy running as a **sidecar container** in `core-app`'s pod, authenticated
+via Workload Identity, with `core-app` itself just talking plain Postgres to
+`localhost:5432`. That sidesteps Session 8's `sslmode=disable` finding
+entirely (no JDBC-driver-vs-connector SSL negotiation to fight, because
+`core-app` never talks to Cloud SQL directly at all) and is also a more
+honest contrast for the ConfigMaps/Secrets theory point — ordinary Kubernetes
+primitives doing the configuration job, not a cloud-provider-specific SDK.
+
+All ten manifests in `k8s/` (including the three deliberately broken
+break-and-fix variants) were validated with `kubectl apply --dry-run=client
+--validate=true` against the real Kubernetes API schema — genuinely checked,
+not just hand-written and assumed correct. Not yet validated: an actual
+Autopilot cluster has not been created or deployed to this session: that's
+real spend worth doing deliberately, not as a side effect of writing the
+starter content. See `k8s/README.md`'s own "Still open" reasoning for what
+that leaves unverified until it happens.
+
+### Still open, until a real cluster runs this
+
+- The Workload Identity binding (GSA ↔ KSA) is documented but unexercised —
+  the Cloud SQL Auth Proxy sidecar's actual ability to authenticate has not
+  been proven against a live cluster yet.
+- Rolling update, rollback, and the HPA stretch goal are all described in
+  `k8s/README.md` but not yet demonstrated for real.
+- The three break-and-fix manifests produce their symptoms by construction
+  (a nonexistent image tag, a typo'd secret key, a wrong probe path) — each
+  mechanism is sound on its own, but none has been applied to a running pod
+  and watched fail the intended way yet.
 
 ## Testing strategy — all four layers, explicitly
 

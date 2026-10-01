@@ -1,0 +1,15 @@
+# Internal only — nothing outside the cluster ever calls payment-service
+# directly, so there's no reason to expose it beyond ClusterIP. This is the
+# Service that ticketing-config's PAYMENT_SERVICE_URL actually resolves —
+# "http://payment-service:8081" works because Kubernetes' own DNS maps this
+# Service's name straight to it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+spec:
+  selector:
+    app: payment-service
+  ports:
+    - port: 8081
+      targetPort: 8081

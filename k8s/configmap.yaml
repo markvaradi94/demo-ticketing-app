@@ -1,0 +1,23 @@
+# Non-secret config only — credentials live in Secrets (see README.md in this
+# directory). SPRING_PROFILES_ACTIVE reuses the existing `cloud` profile from
+# Session 8 (spring.docker.compose.enabled=false is still exactly what we want
+# on a cluster): GcpSecretsEnvironmentPostProcessor only activates when
+# GOOGLE_CLOUD_PROJECT is set, and nothing here sets it, so it no-ops cleanly —
+# every connection string below comes from a Kubernetes Secret instead, no new
+# Spring profile needed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ticketing-config
+data:
+  SPRING_PROFILES_ACTIVE: "cloud"
+  # Service DNS is service discovery — no Cloud Run URL, no load balancer, just
+  # the Service name from core-app-service.yaml resolved by the cluster's own
+  # DNS. This is the live theory point for this session, made concrete.
+  PAYMENT_SERVICE_URL: "http://payment-service:8081"
+  # The Cloud SQL Auth Proxy sidecar (see core-app-deployment.yaml) listens on
+  # localhost inside the pod and does the encrypted tunnel + IAM auth itself —
+  # unlike Session 8's socketFactory JDBC URL, there's no credential and no
+  # sslmode fight to encode here at all, just a plain local address.
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://localhost:5432/ticketing"
+  SPRING_RABBITMQ_SSL_ENABLED: "true"

@@ -1,0 +1,23 @@
+# Stretch goal only — not applied during the core lab. Targets core-app
+# specifically: it's the one service a student can actually drive load
+# against (the booking endpoint), so it's the one where scaling is something
+# to watch happen, not just configure. GKE Autopilot ships metrics-server
+# built in — no separate install step before this works.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: core-app
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: core-app
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60

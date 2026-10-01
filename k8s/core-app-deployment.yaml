@@ -1,0 +1,96 @@
+# Two instances, not one — the point of a Deployment over a bare Pod is that
+# "more than one running at once" becomes something students genuinely observe
+# (rolling update, one replica updating while the other still serves traffic),
+# not just a diagram.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: core-app
+  template:
+    metadata:
+      labels:
+        app: core-app
+    spec:
+      # GKE Autopilot requires Workload Identity for any pod calling a GCP
+      # API — there's no node-level service account key fallback the way
+      # Standard mode allows. The Cloud SQL Auth Proxy sidecar below needs
+      # this identity to call the Cloud SQL Admin API; see k8s/README.md for
+      # the one-time `gcloud iam service-accounts add-iam-policy-binding` /
+      # `kubectl annotate serviceaccount` setup this KSA depends on.
+      serviceAccountName: ticketing-ksa
+      containers:
+        - name: core-app
+          image: europe-central2-docker.pkg.dev/ticketing-app-510211/ticketing/core-app:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: ticketing-config
+          env:
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: db-username }
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: db-password }
+            - name: SPRING_MONGODB_URI
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: mongo-uri }
+            - name: SPRING_RABBITMQ_HOST
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: rabbitmq-host }
+            - name: SPRING_RABBITMQ_PORT
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: rabbitmq-port }
+            - name: SPRING_RABBITMQ_USERNAME
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: rabbitmq-username }
+            - name: SPRING_RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: rabbitmq-password }
+            - name: SPRING_RABBITMQ_VIRTUAL_HOST
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: rabbitmq-vhost }
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+          # Spring Boot auto-exposes these two groups with zero extra config
+          # the moment it detects it's running inside Kubernetes (the
+          # KUBERNETES_SERVICE_HOST env var every pod gets automatically) —
+          # nothing to add to application.properties for this session.
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8080 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8080 }
+            initialDelaySeconds: 30
+            periodSeconds: 15
+        # Cloud SQL Auth Proxy, as a sidecar rather than the JDBC
+        # socketFactory approach Session 8 used — the standard GKE pattern,
+        # and it sidesteps that session's own sslmode/EOFException finding
+        # entirely: core-app talks plain Postgres wire protocol to
+        # localhost, the sidecar is the only thing that ever talks to the
+        # real Cloud SQL instance.
+        - name: cloud-sql-proxy
+          image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.26.0
+          args:
+            - "--structured-logs"
+            - "--port=5432"
+            - "ticketing-app-510211:europe-central2:ticketing-shared"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"

@@ -1,0 +1,42 @@
+# The simplest Deployment in this directory on purpose — payment-service has
+# no database, no cloud profile, nothing to fetch from a Secret at all. Worth
+# pointing out explicitly next to core-app's Deployment: not every service in
+# the same cluster needs the same amount of configuration.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment-service
+  template:
+    metadata:
+      labels:
+        app: payment-service
+    spec:
+      containers:
+        - name: payment-service
+          image: europe-central2-docker.pkg.dev/ticketing-app-510211/ticketing/payment-service:latest
+          ports:
+            - containerPort: 8081
+          # Same fixed JVM overhead Session 8 measured on core-app applies
+          # here too, regardless of how small this app's own code is — the
+          # buildpack's memory calculator needs ~1Gi for metaspace/code
+          # cache/thread stacks before any application heap at all.
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "1Gi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8081 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8081 }
+            initialDelaySeconds: 30
+            periodSeconds: 15

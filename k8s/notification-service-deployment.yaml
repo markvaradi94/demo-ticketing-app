@@ -1,0 +1,52 @@
+# No Service object for this one, and deliberately no readiness/liveness
+# probes either — notification-service has no spring-boot-starter-web
+# dependency at all (same reason Session 8 deployed it as a Cloud Run Worker
+# Pool instead of a normal service: the buildpack itself detected "Non-web
+# application"), so there's no embedded server for an httpGet probe to call.
+# Without a probe, the kubelet just restarts the container if the process
+# itself dies — real crash recovery, just not deep health checking. Adding a
+# web server here purely to satisfy a probe would undo a decision made
+# deliberately in Session 7, not fix a gap.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification-service
+  template:
+    metadata:
+      labels:
+        app: notification-service
+    spec:
+      containers:
+        - name: notification-service
+          image: europe-central2-docker.pkg.dev/ticketing-app-510211/ticketing/notification-service:latest
+          envFrom:
+            - configMapRef:
+                name: ticketing-config
+          env:
+            - name: SPRING_RABBITMQ_HOST
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: rabbitmq-host }
+            - name: SPRING_RABBITMQ_PORT
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: rabbitmq-port }
+            - name: SPRING_RABBITMQ_USERNAME
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: rabbitmq-username }
+            - name: SPRING_RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: rabbitmq-password }
+            - name: SPRING_RABBITMQ_VIRTUAL_HOST
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: rabbitmq-vhost }
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "1Gi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"

@@ -1,0 +1,15 @@
+# ClusterIP, not LoadBalancer — kubectl port-forward is enough to curl this
+# for the lab, and a persistent LoadBalancer per student would be an ongoing
+# cost nobody's watching, the same cost-hygiene habit as stopping Cloud SQL
+# between Session 8's sessions. Promote to LoadBalancer only if a real public
+# URL is specifically wanted.
+apiVersion: v1
+kind: Service
+metadata:
+  name: core-app
+spec:
+  selector:
+    app: core-app
+  ports:
+    - port: 8080
+      targetPort: 8080

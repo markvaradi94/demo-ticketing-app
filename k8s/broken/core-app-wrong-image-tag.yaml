@@ -1,0 +1,74 @@
+# BREAK-AND-FIX #1 — apply this over the working core-app Deployment:
+#   kubectl apply -f k8s/broken/core-app-wrong-image-tag.yaml
+# Expected symptom: `kubectl get pods` shows ImagePullBackOff — the tag
+# "v1" was never pushed to Artifact Registry, only "latest" was.
+# Diagnose with: kubectl describe pod <core-app-pod-name>
+# Fix: reapply the real k8s/core-app-deployment.yaml (correct tag: latest).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: core-app
+  template:
+    metadata:
+      labels:
+        app: core-app
+    spec:
+      serviceAccountName: ticketing-ksa
+      containers:
+        - name: core-app
+          image: europe-central2-docker.pkg.dev/ticketing-app-510211/ticketing/core-app:v1
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: ticketing-config
+          env:
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: db-username }
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: db-password }
+            - name: SPRING_MONGODB_URI
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: mongo-uri }
+            - name: SPRING_RABBITMQ_HOST
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: rabbitmq-host }
+            - name: SPRING_RABBITMQ_PORT
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: rabbitmq-port }
+            - name: SPRING_RABBITMQ_USERNAME
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: rabbitmq-username }
+            - name: SPRING_RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: rabbitmq-password }
+            - name: SPRING_RABBITMQ_VIRTUAL_HOST
+              valueFrom:
+                secretKeyRef: { name: ticketing-secrets, key: rabbitmq-vhost }
+          resources:
+            requests: { cpu: "500m", memory: "1Gi" }
+            limits: { cpu: "1", memory: "1Gi" }
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8080 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8080 }
+            initialDelaySeconds: 30
+            periodSeconds: 15
+        - name: cloud-sql-proxy
+          image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.26.0
+          args:
+            - "--structured-logs"
+            - "--port=5432"
+            - "ticketing-app-510211:europe-central2:ticketing-shared"
+          resources:
+            requests: { cpu: "250m", memory: "256Mi" }
+            limits: { cpu: "500m", memory: "256Mi" }
