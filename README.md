@@ -380,23 +380,31 @@ Everything else — Workload Identity, the ConfigMap/Secret wiring, Service
 DNS resolution, the three break-and-fix symptoms — worked exactly as
 designed on the first real attempt once the sidecar race above was fixed.
 
-## Where things stand — Session 10: CI/CD (start)
+## Where things stand — Session 10: CI/CD (end)
 
 Branched from `session-09-end`, not `session-09-start` — the earlier mix-up
 where this session's start branch briefly carried Session 9's finished work
 has been corrected; see the git history if curious, not repeated here.
 
-Unlike every prior session's "(start)" write-up, there's nothing new in the
-*application* on this branch — `.github/workflows/build.yml` is still
-exactly what Session 2 left it (checkout → setup-java → `./gradlew build`).
-That's deliberate, not an oversight: the spec is explicit that **extending
-the pipeline to build images, push to Artifact Registry, and deploy to GKE
-is this session's live-coding content** — pre-writing it here would spoil
-the lab the same way pre-writing `BookingService` would have in Session 1.
+The pipeline is real now, not just planned — `.github/workflows/build.yml`
+gained a `deploy` job that genuinely builds, SHA-tags, pushes, and deploys
+all three services to a live GKE cluster, gated behind the `production`
+Environment's approval, authenticated via Workload Identity Federation with
+no key material anywhere. A real push to `main`, a real manual approval, a
+real rollout — confirmed by a real booking traveling through Cloud SQL,
+`payment-service`, and a CloudAMQP notification arriving in
+`notification-service`'s logs, same proof standard as every other session.
 
-What *is* ready, per the spec's own call-out that Workload Identity
-Federation is "the most likely thing to eat an hour" and should be
-pre-configured if so:
+**This repo also gained its first conventional trunk branch, `main`,
+during this session** — it didn't have one. Every prior branch was a
+session snapshot; nothing acted as the evolving "current state" a CI
+pipeline normally deploys from. `main` was cut from `session-10-end`'s tip
+and is now the GitHub default branch too (previously, by accident of
+history, the default branch was `session-01-start`).
+
+What was provisioned ahead of the live-coding, per the spec's own call-out
+that Workload Identity Federation is "the most likely thing to eat an hour"
+and should be pre-configured if so:
 
 **Workload Identity Federation — provisioned and verified, not just
 documented:**
@@ -449,21 +457,80 @@ gh variable set GKE_CLUSTER_REGION --env production --body "europe-central2"
 gh variable set ARTIFACT_REGISTRY --env production --body "europe-central2-docker.pkg.dev/ticketing-app-510211/ticketing"
 ```
 
-### Still open, deliberately, until the session itself
+### Real findings from actually running this
 
-- **No GKE cluster currently exists** — Session 9's was deleted after
-  verification for the same cost reason it always is. Recreate it
-  (`gcloud container clusters create-auto ticketing ...`, same command as
-  Session 9) right before the session, not days ahead of it.
-- **The workflow YAML's deploy stages don't exist yet** — that's this
-  session's live-coding and lab content, not a gap to close here.
-- **The final project's definition of done** belongs in this session's
-  wrap-up, once the pipeline itself is real: all three services running,
-  the booking flow working end to end, overbooking rejected and proven by a
-  test, `./gradlew check` green (Modulith + ArchUnit included), a green CI
-  pipeline, and a README that explains how to run it locally with the
-  generated module diagram. GKE + an automatic pipeline deploying to it is
-  explicitly a stretch goal, not a requirement.
+Three genuine findings, on top of the ten from Session 8 and three from
+Session 9 — the running total says more about what "verify, don't assume"
+actually costs than any one of them individually does.
+
+1. **This repo had no `main` branch at all.** The workflow's first draft
+   triggered `deploy` on `refs/heads/main`, copied from the spec's generic
+   phrasing without checking — and this repo's entire structure is session
+   branches, no evolving trunk. Worse, the actual GitHub default branch
+   was `session-01-start`, an accident of history nobody had looked at
+   since the repo was created. Fixed by creating `main` for real (from
+   `session-10-end`'s tip) and setting it as the GitHub default — not a
+   workaround, a genuine missing piece of repo hygiene this session
+   surfaced.
+2. **The Session 9 sidecar fix reduces the startup race, doesn't eliminate
+   it.** With the native-sidecar `restartPolicy`/`startupProbe` fix in
+   place, `cloud-sql-proxy` itself never crashed this session (confirmed:
+   `restarts=0` throughout) — but `core-app` still hit one `Connection
+   refused` to `localhost:5432` and restarted once before stabilizing. The
+   proxy's `/startup` endpoint most likely reports ready a moment before
+   its actual Postgres listener is accepting connections — the HTTP health
+   server and the TCP proxy socket don't necessarily finish initializing in
+   the same instant. Not fixed further this session (it still self-heals
+   via one automatic restart, same as before the native-sidecar fix even
+   existed) — recorded honestly as a real limit of the existing fix rather
+   than claimed as fully solved.
+3. **`actions/setup-java@v4` and the Node.js 20 runtime it depends on are
+   both deprecated**, flagged directly in the workflow run's own
+   annotations. Not blocking — GitHub is still forcing these actions onto
+   Node 24 under the hood — but a real, dated thing to bump
+   (`actions/setup-java@v5`) before it becomes a real break instead of a
+   warning.
+
+**Confirmed working end to end, genuinely, not assumed:** a push to `main`
+→ `build` job green → `deploy` paused on the `production` Environment's
+approval gate → approved → WIF authentication succeeded with zero key
+material → all three images built, SHA-tagged, and pushed → GKE rollout
+completed with **zero container restarts** (cleaner than the manual deploy
+earlier this same session) → a real booking confirmed through Cloud SQL and
+`payment-service` → a real CloudAMQP message picked up by
+`notification-service`. Then, separately: a deliberately broken image
+deployed on purpose → genuine `ImagePullBackOff`, rollout genuinely stuck,
+the two prior healthy replicas continuing to serve traffic the entire
+time → `kubectl rollout undo` → clean recovery, confirmed by another real
+booking succeeding immediately after.
+
+**Everything was torn down after verifying** — same cost discipline as
+Sessions 8 and 9: the GKE cluster deleted, Cloud SQL stopped. Nothing from
+this session's testing is still running or billing.
+
+### Final project — definition of done
+
+Stated here, as the spec calls for, now that the pipeline itself is real:
+
+1. All three services run.
+2. The booking flow works end to end.
+3. Overbooking is rejected, proven by a test.
+4. `./gradlew check` passes, including Modulith verification and ArchUnit
+   rules.
+5. The CI pipeline is green.
+6. The README explains how to run the project locally, and includes the
+   generated module diagram.
+
+**Explicitly not required:** GKE with the pipeline deploying to it
+automatically — that's the stretch goal this session itself just proved
+out, not the bar every student needs to clear. A student whose own cluster
+is broken still has a complete, working system and a green pipeline against
+it; GKE is where the ambitious difference shows up, not where "done" is
+decided.
+
+**Deadline:** two weeks after this session — long enough for people with
+day jobs, short enough to keep momentum, and inside the GCP trial window
+this whole course has been built against.
 
 ## Testing strategy — all four layers, explicitly
 
