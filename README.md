@@ -8,7 +8,7 @@ history is the course.
 
 Two branches per session: `session-NN-start` is what you check out before the
 session begins, `session-NN-end` is the finished state after that session's live
-coding and lab. You are currently on **`session-09-start`**.
+coding and lab. You are currently on **`session-10-start`**.
 
 ## Prerequisites
 
@@ -379,6 +379,91 @@ manifests were first written and schema-validated — proof that
 Everything else — Workload Identity, the ConfigMap/Secret wiring, Service
 DNS resolution, the three break-and-fix symptoms — worked exactly as
 designed on the first real attempt once the sidecar race above was fixed.
+
+## Where things stand — Session 10: CI/CD (start)
+
+Branched from `session-09-end`, not `session-09-start` — the earlier mix-up
+where this session's start branch briefly carried Session 9's finished work
+has been corrected; see the git history if curious, not repeated here.
+
+Unlike every prior session's "(start)" write-up, there's nothing new in the
+*application* on this branch — `.github/workflows/build.yml` is still
+exactly what Session 2 left it (checkout → setup-java → `./gradlew build`).
+That's deliberate, not an oversight: the spec is explicit that **extending
+the pipeline to build images, push to Artifact Registry, and deploy to GKE
+is this session's live-coding content** — pre-writing it here would spoil
+the lab the same way pre-writing `BookingService` would have in Session 1.
+
+What *is* ready, per the spec's own call-out that Workload Identity
+Federation is "the most likely thing to eat an hour" and should be
+pre-configured if so:
+
+**Workload Identity Federation — provisioned and verified, not just
+documented:**
+```
+gcloud iam workload-identity-pools create github-actions-pool \
+  --project=ticketing-app-510211 --location=global \
+  --display-name="GitHub Actions Pool"
+
+gcloud iam workload-identity-pools providers create-oidc github-actions-provider \
+  --project=ticketing-app-510211 --location=global \
+  --workload-identity-pool=github-actions-pool \
+  --issuer-uri="https://token.actions.githubusercontent.com" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository" \
+  --attribute-condition="assertion.repository=='markvaradi94/demo-ticketing-app'"
+
+gcloud iam service-accounts create github-actions-ci --project=ticketing-app-510211
+
+# Least privilege — push images, deploy to GKE, nothing else:
+gcloud projects add-iam-policy-binding ticketing-app-510211 \
+  --member="serviceAccount:github-actions-ci@ticketing-app-510211.iam.gserviceaccount.com" \
+  --role="roles/artifactregistry.writer"
+gcloud projects add-iam-policy-binding ticketing-app-510211 \
+  --member="serviceAccount:github-actions-ci@ticketing-app-510211.iam.gserviceaccount.com" \
+  --role="roles/container.developer"
+
+# Only this specific repo's GitHub Actions tokens may impersonate the SA —
+# scoped by the --attribute-condition above, not just by who has the name:
+gcloud iam service-accounts add-iam-policy-binding \
+  github-actions-ci@ticketing-app-510211.iam.gserviceaccount.com \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="principalSet://iam.googleapis.com/projects/793547076785/locations/global/workloadIdentityPools/github-actions-pool/attribute.repository/markvaradi94/demo-ticketing-app"
+```
+No key material exists anywhere — that's the entire point of WIF over the
+long-lived service-account-key approach the theory block argues against.
+
+**GitHub side, also provisioned, not just planned** — a `production`
+Environment with a required reviewer (the manual approval gate from the
+spec), and the WIF/GCP/GKE identifiers as Environment variables, so the
+live-coded workflow YAML references `${{ vars.* }}` instead of anything
+hardcoded:
+```
+gh api repos/markvaradi94/demo-ticketing-app/environments/production -X PUT \
+  -f "reviewers[][type]=User" -F "reviewers[][id]=<your-github-user-id>"
+
+gh variable set GCP_PROJECT_ID --env production --body "ticketing-app-510211"
+gh variable set GCP_WORKLOAD_IDENTITY_PROVIDER --env production --body "projects/793547076785/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider"
+gh variable set GCP_CI_SERVICE_ACCOUNT --env production --body "github-actions-ci@ticketing-app-510211.iam.gserviceaccount.com"
+gh variable set GKE_CLUSTER_NAME --env production --body "ticketing"
+gh variable set GKE_CLUSTER_REGION --env production --body "europe-central2"
+gh variable set ARTIFACT_REGISTRY --env production --body "europe-central2-docker.pkg.dev/ticketing-app-510211/ticketing"
+```
+
+### Still open, deliberately, until the session itself
+
+- **No GKE cluster currently exists** — Session 9's was deleted after
+  verification for the same cost reason it always is. Recreate it
+  (`gcloud container clusters create-auto ticketing ...`, same command as
+  Session 9) right before the session, not days ahead of it.
+- **The workflow YAML's deploy stages don't exist yet** — that's this
+  session's live-coding and lab content, not a gap to close here.
+- **The final project's definition of done** belongs in this session's
+  wrap-up, once the pipeline itself is real: all three services running,
+  the booking flow working end to end, overbooking rejected and proven by a
+  test, `./gradlew check` green (Modulith + ArchUnit included), a green CI
+  pipeline, and a README that explains how to run it locally with the
+  generated module diagram. GKE + an automatic pipeline deploying to it is
+  explicitly a stretch goal, not a requirement.
 
 ## Testing strategy — all four layers, explicitly
 
