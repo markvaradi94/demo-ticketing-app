@@ -480,7 +480,7 @@ on both sides: the integration test now deletes what it created, and the reposit
 test no longer trusts the shared table to contain only its own rows — it filters
 `findAll()`'s result down to the ids it just saved before asserting on it.
 
-## Homework
+## Homework (Session 8)
 
 A standalone exercise, not a change to this repo. Take any small Spring Boot project
 (a fresh one is fine — a single controller and a database is enough) and:
@@ -502,8 +502,33 @@ looked like the obvious choice and wasn't, confirmed by trying it, not by assumi
 popular library must be fine. Practicing "verify the dependency actually works
 before building on it" on unfamiliar infrastructure, not just unfamiliar code.
 
-Next up, Session 9: GKE — provided Kubernetes manifests (not hand-written; reading
-and adapting them is the skill, not authoring YAML from scratch), a Horizontal Pod
-Autoscaler, and break-and-fix labs against a real cluster. The first session where
-"more than one instance of a service running at once" is something students
-genuinely observe, not just reason about.
+## Homework (Session 9)
+
+Also standalone, not a change to this repo. Take any small multi-container setup —
+two containers you control is enough, it doesn't need to be Kubernetes-specific to
+start:
+
+1. Write a Kubernetes Deployment with a sidecar container in the same pod (any
+   sidecar pattern works — a proxy, a log shipper, anything with its own startup
+   time). Give the sidecar a `startupProbe` and get it wrong the way this session
+   first did: if the sidecar binds its port to `127.0.0.1` only (the common,
+   deliberate default for anything not meant to be reached from outside the pod),
+   confirm for yourself that a plain `tcpSocket`/`httpGet` probe against it fails
+   every time — kubelet probes the pod's IP, not loopback — before working out the
+   actual fix.
+2. Remove any startup ordering between your main container and the sidecar and
+   watch the main container crash on its first attempt, the same race `core-app`
+   hit tonight. Then fix it properly with Kubernetes' native sidecar pattern
+   (`restartPolicy: Always` + a passing `startupProbe` gating the main container's
+   start) — not by letting Kubernetes' automatic restart quietly paper over a race
+   that's still there.
+
+Same mechanic as both this course's running theme: a plausible-looking first
+attempt (a second container, a direct port check) was wrong in a way that only
+showed up by actually running it, not by reading the manifest. Confirmed on a real
+cluster, not assumed from the YAML looking reasonable.
+
+Next up, Session 10: CI/CD — Workload Identity Federation instead of long-lived
+service account keys, a pipeline that builds, tests, and deploys on every commit,
+GitHub Environments with an approval gate, and `kubectl rollout undo` as the
+rollback story. The final project's definition of done gets stated here too.
