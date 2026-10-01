@@ -317,46 +317,68 @@ gcloud secrets delete cloud-sql-jdbc-url atlas-uri cloudamqp-uri
 # Atlas: Project > Clusters > ... > Terminate. CloudAMQP: Instance > Delete.
 ```
 
-## Where things stand — Session 9: GKE (start)
+## Where things stand — Session 9: GKE (end)
 
-Branched from `session-08-end` with no code changes — this session's content
-is entirely new: `k8s/`, a full set of Kubernetes manifests for all three
-services, targeting the same instructor GCP project and Artifact Registry
-images Session 8 already built. Full detail, including the one-time cluster
-setup and per-student secret-creation commands, lives in `k8s/README.md`
-rather than duplicated here.
+A real Autopilot cluster was created, every manifest in `k8s/` was applied to
+it, and the full booking flow was proven end to end — a real `curl` through
+`core-app`'s Service, a real charge through `payment-service` over Service
+DNS, a real message landing in `notification-service` over the same CloudAMQP
+broker Session 8 used. Rolling update, rollback, and all three break-and-fix
+scenarios were each triggered for real and produced exactly their documented
+symptom. The cluster was torn down immediately after — see `k8s/README.md`'s
+teardown section — so none of this is still running or billing.
 
 The one real design decision worth calling out: Session 8 authenticated to
 Cloud SQL via a JDBC `socketFactory` URL embedded with credentials. This
-session switches to the standard GKE pattern instead — the Cloud SQL Auth
-Proxy running as a **sidecar container** in `core-app`'s pod, authenticated
-via Workload Identity, with `core-app` itself just talking plain Postgres to
+session uses the standard GKE pattern instead — the Cloud SQL Auth Proxy as
+a **sidecar container** in `core-app`'s pod, authenticated via Workload
+Identity, with `core-app` itself just talking plain Postgres to
 `localhost:5432`. That sidesteps Session 8's `sslmode=disable` finding
-entirely (no JDBC-driver-vs-connector SSL negotiation to fight, because
-`core-app` never talks to Cloud SQL directly at all) and is also a more
-honest contrast for the ConfigMaps/Secrets theory point — ordinary Kubernetes
-primitives doing the configuration job, not a cloud-provider-specific SDK.
+entirely and is a more honest contrast for the ConfigMaps/Secrets theory
+point — ordinary Kubernetes primitives doing the configuration job, not a
+cloud-provider SDK.
 
-All ten manifests in `k8s/` (including the three deliberately broken
-break-and-fix variants) were validated with `kubectl apply --dry-run=client
---validate=true` against the real Kubernetes API schema — genuinely checked,
-not just hand-written and assumed correct. Not yet validated: an actual
-Autopilot cluster has not been created or deployed to this session: that's
-real spend worth doing deliberately, not as a side effect of writing the
-starter content. See `k8s/README.md`'s own "Still open" reasoning for what
-that leaves unverified until it happens.
+### Real findings from actually running this
 
-### Still open, until a real cluster runs this
+Three genuine, reproduced-live issues, none of them anticipated when the
+manifests were first written and schema-validated — proof that
+`--dry-run=client` checks shape, not behavior.
 
-- The Workload Identity binding (GSA ↔ KSA) is documented but unexercised —
-  the Cloud SQL Auth Proxy sidecar's actual ability to authenticate has not
-  been proven against a live cluster yet.
-- Rolling update, rollback, and the HPA stretch goal are all described in
-  `k8s/README.md` but not yet demonstrated for real.
-- The three break-and-fix manifests produce their symptoms by construction
-  (a nonexistent image tag, a typo'd secret key, a wrong probe path) — each
-  mechanism is sound on its own, but none has been applied to a running pod
-  and watched fail the intended way yet.
+1. **A real sidecar startup race.** With `cloud-sql-proxy` as a plain second
+   container (no `restartPolicy`), both containers in the pod start
+   simultaneously with no ordering guarantee. `core-app`'s first boot reached
+   Hikari before the proxy had finished its own Cloud SQL Admin API
+   handshake and opened `127.0.0.1:5432` — crashed with exit code 1 after 22
+   seconds, succeeded only on Kubernetes' automatic restart. Fixed with
+   Kubernetes' **native sidecar** feature (`restartPolicy: Always` on the
+   `cloud-sql-proxy` container, GA since 1.28 — our cluster ran 1.35) plus a
+   `startupProbe`, which gates `core-app`'s own start on the proxy's probe
+   actually passing — closing the race instead of surviving it by luck.
+2. **The obvious probe for that fix was itself wrong, and it crash-looped
+   the sidecar forever.** A first attempt used `startupProbe: {tcpSocket:
+   {port: 5432}}`. The proxy deliberately binds `5432` to `127.0.0.1`
+   only — nothing outside the pod should reach the DB tunnel — but kubelet's
+   probe connects to the **pod's IP**, not loopback, so the check failed
+   continuously even while the proxy was genuinely healthy and actively
+   serving `core-app`'s connections (confirmed in its own logs). kubelet
+   killed and restarted a working container repeatedly because the probe
+   itself could never succeed. Fix: the proxy's own `--health-check` flag,
+   which starts an HTTP health server — but it has the *identical*
+   loopback-only default, needing `--http-address=0.0.0.0` explicitly before
+   kubelet can reach it at all. `startupProbe` then checks that server's
+   `/startup` path instead of the raw Postgres port.
+3. **The default 1-second probe timeout is too tight for a cold JVM.**
+   `payment-service` logged transient `context deadline exceeded` probe
+   failures right after startup — the JVM's first few Actuator responses
+   occasionally missed kubelet's default `timeoutSeconds: 1`. Didn't cause a
+   restart this time (it self-resolved within the failure threshold), but
+   it's the same category of issue as Session 8's cold-start timeout
+   finding, one layer down. Fixed with `timeoutSeconds: 3` on both services'
+   probes.
+
+Everything else — Workload Identity, the ConfigMap/Secret wiring, Service
+DNS resolution, the three break-and-fix symptoms — worked exactly as
+designed on the first real attempt once the sidecar race above was fixed.
 
 ## Testing strategy — all four layers, explicitly
 

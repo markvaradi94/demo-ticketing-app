@@ -1,5 +1,12 @@
 # Session 9 — GKE manifests
 
+**Verified against a real Autopilot cluster** — every command below was
+actually run, including teardown. Three real issues surfaced along the way
+(a sidecar startup race, a loopback-vs-pod-IP probe mistake, a too-tight
+default probe timeout) — full detail and fixes in the main `README.md`'s
+"Real findings" section; the manifests in this directory already have all
+three fixes applied.
+
 Provided manifests, per the course's own convention for this session — reading
 and adapting them is the skill being taught, not hand-writing Kubernetes YAML
 from scratch. Targets the same instructor project/images Session 8 already

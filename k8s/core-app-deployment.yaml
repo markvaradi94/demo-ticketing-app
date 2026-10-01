@@ -67,14 +67,18 @@ spec:
           # the moment it detects it's running inside Kubernetes (the
           # KUBERNETES_SERVICE_HOST env var every pod gets automatically) —
           # nothing to add to application.properties for this session.
+          # timeoutSeconds: 3, not the 1s kubelet default — see
+          # payment-service-deployment.yaml for why.
           readinessProbe:
             httpGet: { path: /actuator/health/readiness, port: 8080 }
             initialDelaySeconds: 20
             periodSeconds: 10
+            timeoutSeconds: 3
           livenessProbe:
             httpGet: { path: /actuator/health/liveness, port: 8080 }
             initialDelaySeconds: 30
             periodSeconds: 15
+            timeoutSeconds: 3
         # Cloud SQL Auth Proxy, as a sidecar rather than the JDBC
         # socketFactory approach Session 8 used — the standard GKE pattern,
         # and it sidesteps that session's own sslmode/EOFException finding
@@ -83,8 +87,37 @@ spec:
         # real Cloud SQL instance.
         - name: cloud-sql-proxy
           image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.26.0
+          # restartPolicy: Always on a container (not the Pod) is what makes
+          # this a native Kubernetes sidecar (1.28+) instead of just "a second
+          # container that happens to start at the same time as the first."
+          # Without this, a real race was observed live: core-app's very
+          # first startup attempt reached Hikari before the proxy had
+          # finished its own Cloud SQL Admin API handshake and opened
+          # 127.0.0.1:5432, crashed with exit code 1, and only succeeded on
+          # Kubernetes' automatic restart. The startupProbe below is what a
+          # native sidecar uses to signal "actually ready" — core-app won't
+          # start at all until this probe passes, closing the race instead
+          # of surviving it by luck.
+          #
+          # Also observed live: a first attempt at this probe used
+          # `tcpSocket: {port: 5432}` directly — wrong, and it crash-looped
+          # the sidecar forever, even while genuinely healthy. The proxy
+          # binds 5432 to 127.0.0.1 only (deliberately — nothing outside the
+          # pod should reach the DB tunnel), but kubelet's probe connects to
+          # the pod's own IP, which is unreachable for a loopback-only
+          # listener. The proxy's `--health-check` server has the identical
+          # default and needs the same fix: `--http-address=0.0.0.0` to
+          # actually be reachable by kubelet at all.
+          restartPolicy: Always
+          startupProbe:
+            httpGet: { path: /startup, port: 9090 }
+            periodSeconds: 2
+            failureThreshold: 30
           args:
             - "--structured-logs"
+            - "--health-check"
+            - "--http-address=0.0.0.0"
+            - "--http-port=9090"
             - "--port=5432"
             - "ticketing-app-510211:europe-central2:ticketing-shared"
           resources:

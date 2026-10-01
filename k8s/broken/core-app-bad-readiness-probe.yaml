@@ -68,8 +68,16 @@ spec:
             periodSeconds: 15
         - name: cloud-sql-proxy
           image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.26.0
+          restartPolicy: Always
+          startupProbe:
+            httpGet: { path: /startup, port: 9090 }
+            periodSeconds: 2
+            failureThreshold: 30
           args:
             - "--structured-logs"
+            - "--health-check"
+            - "--http-address=0.0.0.0"
+            - "--http-port=9090"
             - "--port=5432"
             - "ticketing-app-510211:europe-central2:ticketing-shared"
           resources:
