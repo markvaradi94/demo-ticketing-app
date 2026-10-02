@@ -29,5 +29,10 @@ dependencies {
 	testImplementation(libs.testcontainers.postgresql)
 	testImplementation(libs.testcontainers.mongodb)
 	testImplementation(libs.spring.modulith.starter.test)
+	// Separate artifact from spring-modulith-starter-core — the Documenter/
+	// PlantUML diagram generation isn't bundled with module-boundary
+	// verification, confirmed against the actual jar (spring-modulith-core
+	// has no Documenter class at all; it lives in spring-modulith-docs).
+	testImplementation(libs.spring.modulith.docs)
 	testImplementation(libs.archunit.junit5)
 }

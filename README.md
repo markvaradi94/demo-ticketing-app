@@ -36,6 +36,19 @@ builds and tests every subproject (`core-app`, `payment-service`,
 Testcontainers-backed test suite; `payment-service` and `notification-service` are
 plain, fast-booting Spring Boot apps.
 
+### Module diagram
+
+`ModularityTests.generatesModuleDiagram()` regenerates it on every test run —
+`core-app/build/spring-modulith-docs/components.puml`, a PlantUML file showing
+the five modules (`Catalog`, `Messaging`, `Booking`, `Review`, `Shared`) and
+their real dependencies, straight from `ApplicationModules.of(...)`, not
+hand-drawn. Render it with any PlantUML viewer/extension, or paste it into
+[PlantUML's own online editor](https://www.plantuml.com/plantuml). A separate
+Gradle dependency from `verify()`'s own boundary-checking
+(`spring-modulith-starter-core`) — confirmed directly against the jars that
+the `Documenter`/diagram-generation API lives in a different artifact
+entirely, `spring-modulith-docs`, not bundled with it.
+
 ## Where things stand — Session 8: Cloud Run (end)
 
 A different kind of session, continued from `session-08-start`. Sessions 1–7 could
